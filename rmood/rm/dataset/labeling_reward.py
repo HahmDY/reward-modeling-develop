@@ -33,7 +33,7 @@ def batched_rewards(texts, model, tokenizer, batch_size=1024, desc="Scoring", am
             return_tensors="pt",
             padding=True,
             truncation=True,
-            max_length=3072,
+            max_length=2048,
         )
         enc = {k: v.to(model.device) for k, v in enc.items()}
 

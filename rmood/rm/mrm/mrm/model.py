@@ -5,53 +5,77 @@ import torch
 from torch import nn
 
 from transformers.utils import ModelOutput
+from transformers.modeling_outputs import BaseModelOutputWithPast, SequenceClassifierOutputWithPast
+
 from transformers.models.llama.modeling_llama import can_return_tuple
 from transformers.models.llama.modeling_llama import Cache
 from transformers.models.qwen3.modeling_qwen3 import Qwen3Model, Qwen3PreTrainedModel
 
-@dataclass
-class MRMOutputWithPast(ModelOutput):
-    """
-    Base class for outputs of sentence classification models.
-
-    Args:
-        loss (`torch.FloatTensor` of shape `(1,)`, *optional*, returned when `labels` is provided):
-            Classification (or regression if config.num_labels==1) loss.
-        logits (`torch.FloatTensor` of shape `(batch_size, config.num_labels)`):
-            Classification (or regression if config.num_labels==1) scores (before SoftMax).
-        past_key_values (`Cache`, *optional*, returned when `use_cache=True` is passed or when `config.use_cache=True`):
-            It is a [`~cache_utils.Cache`] instance. For more details, see our [kv cache guide](https://huggingface.co/docs/transformers/en/kv_cache).
-
-            Contains pre-computed hidden-states (key and values in the self-attention blocks) that can be used (see
-            `past_key_values` input) to speed up sequential decoding.
-        hidden_states (`tuple(torch.FloatTensor)`, *optional*, returned when `output_hidden_states=True` is passed or when `config.output_hidden_states=True`):
-            Tuple of `torch.FloatTensor` (one for the output of the embeddings, if the model has an embedding layer, +
-            one for the output of each layer) of shape `(batch_size, sequence_length, hidden_size)`.
-
-            Hidden-states of the model at the output of each layer plus the optional initial embedding outputs.
-        attentions (`tuple(torch.FloatTensor)`, *optional*, returned when `output_attentions=True` is passed or when `config.output_attentions=True`):
-            Tuple of `torch.FloatTensor` (one for each layer) of shape `(batch_size, num_heads, sequence_length,
-            sequence_length)`.
-
-            Attentions weights after the attention softmax, used to compute the weighted average in the self-attention
-            heads.
-    """
-
-    loss: Optional[torch.FloatTensor] = None
-    mu: Optional[torch.FloatTensor] = None
-    logvar: Optional[torch.FloatTensor] = None
-    logits: Optional[torch.FloatTensor] = None
-    past_key_values: Optional[Cache] = None
-    hidden_states: Optional[tuple[torch.FloatTensor, ...]] = None
-    attentions: Optional[tuple[torch.FloatTensor, ...]] = None
-    
 
 class MRM(Qwen3PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
-        
-        # base model architecture
+        self.num_labels = config.num_labels
         self.model = Qwen3Model(config)
+        self.score = nn.Linear(config.hidden_size, self.num_labels, bias=False)
+        
+        # R(x,y) = (mu_+ - mu_-)^T Sigma^{-1} f_theta(x,y) + b
+        hidden_size = config.hidden_size
+        self.register_buffer('mu_pos', torch.zeros(hidden_size))  # μ_+
+        self.register_buffer('mu_neg', torch.zeros(hidden_size))  # μ_-
+        self.register_buffer('sigma_inv', torch.eye(hidden_size))  # Σ^{-1}
+        self.register_buffer('bias', torch.tensor(0.0))  # b
+        self.use_gda_reward = True
+
+        # Initialize weights and apply final processing
+        self.post_init()
+    
+    def set_gda_params(self, mu_pos, mu_neg, sigma_inv, bias=None):
+        """
+        GDA 파라미터 설정
+        
+        Args:
+            mu_pos: positive 샘플들의 평균 벡터 (shape: [hidden_size])
+            mu_neg: negative 샘플들의 평균 벡터 (shape: [hidden_size])
+            sigma_inv: 공분산 행렬의 역행렬 (shape: [hidden_size, hidden_size])
+            bias: bias 항 (optional, 자동 계산 가능)
+        """
+        device = self.mu_pos.device
+        dtype = self.mu_pos.dtype
+        
+        self.mu_pos = torch.tensor(mu_pos, dtype=dtype, device=device)
+        self.mu_neg = torch.tensor(mu_neg, dtype=dtype, device=device)
+        self.sigma_inv = torch.tensor(sigma_inv, dtype=dtype, device=device)
+        
+        if bias is None:
+            # b = 0.5 * (mu_-^T Sigma^{-1} mu_- - mu_+^T Sigma^{-1} mu_+)
+            bias = 0.5 * (
+                self.mu_neg @ self.sigma_inv @ self.mu_neg -
+                self.mu_pos @ self.sigma_inv @ self.mu_pos
+            )
+        
+        self.bias = torch.tensor(bias, dtype=dtype, device=device)
+        self.use_gda_reward = True
+    
+    def compute_gda_reward(self, features):
+        """
+        GDA based reward calculation
+        R(x,y) = (mu_+ - mu_-)^T Sigma^{-1} f_theta(x,y) + b
+        
+        Args:
+            features: model's hidden representation (shape: [batch_size, hidden_size])
+        
+        Returns:
+            rewards: (shape: [batch_size])
+        """
+        # (mu_+ - mu_-)^T Sigma^{-1}
+        mu_diff = self.mu_pos - self.mu_neg  # [hidden_size]
+        weight = mu_diff @ self.sigma_inv  # [hidden_size]
+        
+        # weight^T f_theta(x,y) + b
+        rewards = features @ weight + self.bias  # [batch_size]
+        
+        return rewards
 
     def get_input_embeddings(self):
         return self.model.embed_tokens
@@ -71,7 +95,7 @@ class MRM(Qwen3PreTrainedModel):
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
-    ) -> ModelOutput:
+    ) -> SequenceClassifierOutputWithPast:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
             Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
@@ -79,8 +103,7 @@ class MRM(Qwen3PreTrainedModel):
             `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
         """
 
-        # full rewards 
-        transformer_outputs = self.model(
+        transformer_outputs: BaseModelOutputWithPast = self.model(
             input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
@@ -91,46 +114,45 @@ class MRM(Qwen3PreTrainedModel):
             output_hidden_states=output_hidden_states,
         )
         hidden_states = transformer_outputs.last_hidden_state
-        
-        ib_representation = self.encode_head(hidden_states) # dim: (batch_size, latent_dim * 2)
-        mu, logvar = ib_representation.chunk(2, dim=-1)
-        
-        if self.training:
-            eps = torch.randn_like(logvar)
-            std = torch.exp(0.5 * logvar)
-            z = mu + std * eps
+        logits = self.score(hidden_states)
+
+        if input_ids is not None:
+            batch_size = input_ids.shape[0]
         else:
-            z = mu
-            
-        # (B, T, 1) -> (B, T)
-        token_values = self.score(z).squeeze(-1)
+            batch_size = inputs_embeds.shape[0]
 
-        dev = token_values.device
-        if attention_mask is not None:
-            am = attention_mask.to(dev)
-            eos_idx = am.size(1) - 1 - am.long().flip(-1).argmax(dim=1)
+        if self.config.pad_token_id is None and batch_size != 1:
+            raise ValueError("Cannot handle batch sizes > 1 if no padding token is defined.")
+        if self.config.pad_token_id is None:
+            last_non_pad_token = -1
+        elif input_ids is not None:
+            # To handle both left- and right- padding, we take the rightmost token that is not equal to pad_token_id
+            non_pad_mask = (input_ids != self.config.pad_token_id).to(logits.device, torch.int32)
+            token_indices = torch.arange(input_ids.shape[-1], device=logits.device, dtype=torch.int32)
+            last_non_pad_token = (token_indices * non_pad_mask).argmax(-1)
         else:
-            eos_idx = torch.full((token_values.size(0),), token_values.size(1) - 1,
-                                device=dev, dtype=torch.long)
+            last_non_pad_token = -1
 
-        eos_idx = eos_idx.to(dev, dtype=torch.long)
-        B = token_values.size(0)
-
-        ar = torch.arange(B, device=dev, dtype=torch.long)
-
-        pooled_logits = token_values[ar, eos_idx]  # (B,)
-
-        idx3 = eos_idx.view(B, 1, 1).expand(B, 1, mu.size(-1))  # (B, 1, D)
-        mu_eos = mu.gather(1, idx3).squeeze(1)                  # (B, D)
-        logvar_eos = logvar.gather(1, idx3).squeeze(1)          # (B, D)
+        pooled_logits = logits[torch.arange(batch_size, device=logits.device), last_non_pad_token]
 
         loss = None
+        if labels is not None:
+            loss = self.loss_function(logits=logits, labels=labels, pooled_logits=pooled_logits, config=self.config)
+        
+        if self.use_gda_reward:
+            # Extract hidden features at the last non-pad token position
+            # hidden_states shape: [batch_size, seq_len, hidden_size]
+            pooled_features = hidden_states[torch.arange(batch_size, device=hidden_states.device), last_non_pad_token]
+            
+            # Compute GDA-based reward: R(x,y) = (mu_+ - mu_-)^T Sigma^{-1} f_theta(x,y) + b
+            final_logits = self.compute_gda_reward(pooled_features)
+        else:
+            # Use standard score layer output
+            final_logits = pooled_logits
 
-        return MRMOutputWithPast(
+        return SequenceClassifierOutputWithPast(
             loss=loss,
-            mu=mu_eos,
-            logvar=logvar_eos,
-            logits=pooled_logits,
+            logits=final_logits,
             past_key_values=transformer_outputs.past_key_values,
             hidden_states=transformer_outputs.hidden_states,
             attentions=transformer_outputs.attentions,
