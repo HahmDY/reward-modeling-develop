@@ -1,20 +1,20 @@
 #!/bin/bash
 
-export WANDB_PROJECT="PenaltyRM"
+export WANDB_PROJECT="RMOOD"
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 
 cd $RMOOD_HOME
 
-MODEL_NAME="Hahmdong/PRM-llama3.2-3b-alpacafarm-sft"
-TOKENIZING_MODEL="Hahmdong/PRM-llama3.2-3b-alpacafarm-sft"
+MODEL_NAME="Hahmdong/RMOOD-qwen3-4b-alpacafarm-sft"
+TOKENIZING_MODEL="Hahmdong/RMOOD-qwen3-4b-alpacafarm-sft"
 DATASET_NAME="alpacafarm"
 DATA_FILES="$RMOOD_HOME/datasets/${DATASET_NAME}/rm/rm_implicit.jsonl"
 NUM_TRAIN_EPOCHS=1
-OUTPUT_MODEL_NAME="PRM-llama3.2-3b-${DATASET_NAME}-rm"
+OUTPUT_MODEL_NAME="RMOOD-qwen3-4b-${DATASET_NAME}-rm"
 REWARD_MODEL_TYPE="rm"
 
-LEARNING_RATE=5e-5
-python $RMOOD_HOME/penaltyrm/rm/train.py \
+LEARNING_RATE=5e-6
+python $RMOOD_HOME/rmood/rm/train.py \
     --model_name $MODEL_NAME \
     --tokenizing_model $TOKENIZING_MODEL \
     --data_files $DATA_FILES \

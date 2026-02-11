@@ -2,9 +2,8 @@ import os
 import argparse
 import torch
 from datasets import load_dataset
-from transformers import AutoModelForCausalLM, AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from trl import RewardTrainer, RewardConfig
-from trl import clone_chat_template
 
 from rmood.rm.rrm import RRMRewardTrainer
 from rmood.rm.inform import InfoRM, InfoRMRewardTrainer
@@ -72,8 +71,8 @@ def main():
 
     training_args = RewardConfig(
         # Training
-        per_device_train_batch_size=4,
-        gradient_accumulation_steps=8,
+        per_device_train_batch_size=16,
+        gradient_accumulation_steps=4,
         warmup_ratio=0.1,
         learning_rate=learning_rate,
         lr_scheduler_type="cosine",

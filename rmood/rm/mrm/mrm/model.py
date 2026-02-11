@@ -7,10 +7,10 @@ from torch import nn
 from transformers.utils import ModelOutput
 from transformers.models.llama.modeling_llama import can_return_tuple
 from transformers.models.llama.modeling_llama import Cache
-from transformers.models.qwen2.modeling_qwen2 import Qwen2Model, Qwen2PreTrainedModel
+from transformers.models.qwen3.modeling_qwen3 import Qwen3Model, Qwen3PreTrainedModel
 
 @dataclass
-class PenaltyRMOutputWithPast(ModelOutput):
+class MRMOutputWithPast(ModelOutput):
     """
     Base class for outputs of sentence classification models.
 
@@ -46,13 +46,12 @@ class PenaltyRMOutputWithPast(ModelOutput):
     attentions: Optional[tuple[torch.FloatTensor, ...]] = None
     
 
-class PenaltyRM(Qwen2PreTrainedModel):
+class MRM(Qwen3PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         
         # base model architecture
-        self.num_labels = config.num_labels
-        self.model = Qwen2Model(config)
+        self.model = Qwen3Model(config)
 
     def get_input_embeddings(self):
         return self.model.embed_tokens
@@ -127,7 +126,7 @@ class PenaltyRM(Qwen2PreTrainedModel):
 
         loss = None
 
-        return InfoRMOutputWithPast(
+        return MRMOutputWithPast(
             loss=loss,
             mu=mu_eos,
             logvar=logvar_eos,
