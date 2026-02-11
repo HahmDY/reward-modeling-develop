@@ -2,12 +2,22 @@ import os
 import argparse
 import shutil
 import torch
+import numpy as np
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from rmood.rm.mrm import MRM
+
+from rmood.rm.mrm.mrm.model import MRM
+
+RMOOD_HOME = os.getenv("RMOOD_HOME")
 
 
 def load_gda_parameters():
-    raise NotImplementedError("Not implemented")
+    parameters_path = f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/gda_parameters.npz"
+    with np.load(parameters_path) as data:
+        mu_pos = data["mu_pos"]
+        mu_neg = data["mu_neg"]
+        sigma_inv = data["sigma_inv"]
+        
+    return mu_pos, mu_neg, sigma_inv
 
 
 def convert_qwen3_to_mrm(base_model, mu_pos, mu_neg, sigma_inv):

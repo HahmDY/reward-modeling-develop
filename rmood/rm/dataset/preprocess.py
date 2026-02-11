@@ -41,18 +41,18 @@ def data_preprocess(args):
         implicit_processed_dataset["chosen"].append(chosen_messages)
         implicit_processed_dataset["rejected"].append(rejected_messages)
         
-        explicit_processed_dataset.append({
-			"messages": prompt["messages"],
-			"chosen": win_response,
-			"rejected": lose_response
-		})
+        # explicit_processed_dataset.append({
+		# 	"messages": prompt["messages"],
+		# 	"chosen": win_response,
+		# 	"rejected": lose_response
+		# })
         
     print(len(implicit_processed_dataset["chosen"]), len(implicit_processed_dataset["rejected"]))
     
     with open(args.target_path, "w") as f:
         json.dump(implicit_processed_dataset, f, ensure_ascii=False, indent=4)
-    with open(args.explicit_target_path, "w") as f:
-        json.dump(explicit_processed_dataset, f, ensure_ascii=False, indent=4)
+    # with open(args.explicit_target_path, "w") as f:
+    #     json.dump(explicit_processed_dataset, f, ensure_ascii=False, indent=4)
     
     
 if __name__ == "__main__":

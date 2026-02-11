@@ -75,6 +75,7 @@ class VLLM:
         top_p: float = 1.0,
         stop: Optional[List[str]] = None,
         n: int = 1,
+        seed: Optional[int] = None,
     ) -> Union[str, List[str]]:
         if chat:
             prompt = self._to_chat_prompt(messages)
@@ -90,6 +91,7 @@ class VLLM:
             n=n,
             stop=stop or None,
             stop_token_ids=[tid for tid in [self.eos_token_id, self.eot_token_id] if tid is not None],
+            seed=seed,
         )
 
         outs = self.llm.generate([prompt], sampling_params=sampling)
@@ -134,7 +136,7 @@ class LLLMQuietWrapper:
 
 if __name__ == "__main__":
     llm = VLLM(
-        model_name="Hahmdong/PRM-qwen2.5-3b-alpacafarm-sft",
+        model_name="Hahmdong/RMOOD-qwen3-4b-alpacafarm-sft",
         dtype="bfloat16",
         tensor_parallel_size=1,
         gpu_memory_utilization=0.92,
@@ -144,7 +146,7 @@ if __name__ == "__main__":
         quiet=True,
     )
 
-    DEMO_PRINT = True
+    DEMO_PRINT = False
     out = llm.generate(
         chat=True,
         messages=[

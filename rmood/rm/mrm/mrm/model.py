@@ -32,13 +32,13 @@ class MRM(Qwen3PreTrainedModel):
     
     def set_gda_params(self, mu_pos, mu_neg, sigma_inv, bias=None):
         """
-        GDA 파라미터 설정
+        Set GDA parameters
         
         Args:
-            mu_pos: positive 샘플들의 평균 벡터 (shape: [hidden_size])
-            mu_neg: negative 샘플들의 평균 벡터 (shape: [hidden_size])
-            sigma_inv: 공분산 행렬의 역행렬 (shape: [hidden_size, hidden_size])
-            bias: bias 항 (optional, 자동 계산 가능)
+            mu_pos: average vector of positive samples (shape: [hidden_size])
+            mu_neg: average vector of negative samples (shape: [hidden_size])
+            sigma_inv: inverse of the covariance matrix (shape: [hidden_size, hidden_size])
+            bias: bias term (optional, automatically calculated)
         """
         device = self.mu_pos.device
         dtype = self.mu_pos.dtype
@@ -68,12 +68,19 @@ class MRM(Qwen3PreTrainedModel):
         Returns:
             rewards: (shape: [batch_size])
         """
+        # Move all GDA parameters to the same device as features
+        device = features.device
+        mu_pos = self.mu_pos.to(device)
+        mu_neg = self.mu_neg.to(device)
+        sigma_inv = self.sigma_inv.to(device)
+        bias = self.bias.to(device)
+        
         # (mu_+ - mu_-)^T Sigma^{-1}
-        mu_diff = self.mu_pos - self.mu_neg  # [hidden_size]
-        weight = mu_diff @ self.sigma_inv  # [hidden_size]
+        mu_diff = mu_pos - mu_neg  # [hidden_size]
+        weight = mu_diff @ sigma_inv  # [hidden_size]
         
         # weight^T f_theta(x,y) + b
-        rewards = features @ weight + self.bias  # [batch_size]
+        rewards = features @ weight + bias  # [batch_size]
         
         return rewards
 
