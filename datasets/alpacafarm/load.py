@@ -7,7 +7,7 @@ from datasets import load_dataset
 
 from prompts import PROMPTS_NOINPUTS, PROMPTS_INPUTS
 
-PENALTY_HOME = os.getenv("PENALTY_HOME")
+RMOOD_HOME = os.getenv("RMOOD_HOME")
 
 """
 Warning: this script only works for datasets<3.0.0 version.
@@ -104,29 +104,20 @@ def process_dataset(category, split, save_name, include_output, start_idx=None, 
             preference = preference[start_idx:end_idx]
             
     # make directory
-    if not os.path.exists(f"{PENALTY_HOME}/datasets/alpacafarm/{save_name[0]}"):
-        os.makedirs(f"{PENALTY_HOME}/datasets/alpacafarm/{save_name[0]}")
+    if not os.path.exists(f"{RMOOD_HOME}/datasets/alpacafarm/{save_name[0]}"):
+        os.makedirs(f"{RMOOD_HOME}/datasets/alpacafarm/{save_name[0]}")
         
     # save dataset (instructions)
     if category == "alpaca_instructions":
         dataset = parse_dataset_instr(instruciton, input, output, include_output)
         
         if save_name[1] == "sft":
-            with open(f"{PENALTY_HOME}/datasets/alpacafarm/{save_name[0]}/{save_name[1]}.jsonl", "w") as f:
+            with open(f"{RMOOD_HOME}/datasets/alpacafarm/{save_name[0]}/{save_name[1]}.jsonl", "w") as f:
                 for item in dataset:
                     f.write(json.dumps(item, ensure_ascii=False) + "\n")
         else:
-            with open(f"{PENALTY_HOME}/datasets/alpacafarm/{save_name[0]}/{save_name[1]}.json", "w") as f:
+            with open(f"{RMOOD_HOME}/datasets/alpacafarm/{save_name[0]}/{save_name[1]}.json", "w") as f:
                 json.dump(dataset, f, indent=4, ensure_ascii=False)
-        
-    # save dataset (preference)
-    elif category == "alpaca_gpt4_preference":
-        dataset_explicit, dataset_implicit = parse_dataset_pref(instruciton, input, output_1, output_2, preference)
-    
-        with open(f"{PENALTY_HOME}/datasets/alpacafarm/{save_name[0]}/{save_name[1]}_explicit.json", "w") as f:
-            json.dump(dataset_explicit, f, indent=4, ensure_ascii=False)
-        with open(f"{PENALTY_HOME}/datasets/alpacafarm/{save_name[0]}/{save_name[1]}_implicit.jsonl", "w") as f:
-            json.dump(dataset_implicit, f, indent=4, ensure_ascii=False)
 
     return dataset
 
@@ -134,13 +125,11 @@ def process_dataset(category, split, save_name, include_output, start_idx=None, 
 if __name__ == "__main__":
     process_dataset("alpaca_instructions", "sft", ["sft", "sft"], True)
     
-    process_dataset("alpaca_gpt4_preference", "preference", ["rm", "gold_rm"], False) # preference dataset for gold RM
-    
     process_dataset("alpaca_instructions", "preference", ["rm", "rm_prompts"], False) # prompts for proxy RM
     
     process_dataset("alpaca_instructions", "unlabeled", ["rl", "rl_prompts"], False)
     
     # Split val dataset: first 1000 for test, rest for val
     process_dataset("alpaca_instructions", "val", ["test", "test_prompts"], False, start_idx=0, end_idx=1000)
-    process_dataset("alpaca_instructions", "val", ["val", "val"], True, start_idx=1000, end_idx=None)
+    # process_dataset("alpaca_instructions", "val", ["val", "val"], True, start_idx=1000, end_idx=None)
     process_dataset("alpaca_instructions", "val", ["val", "val_prompts"], False, start_idx=1000, end_idx=None)

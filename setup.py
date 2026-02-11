@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="penaltyrm",
+    name="rmood",
     version="0.1.0",
-    description="Source code of penaltyrm",
+    description="Source code of rmood",
     packages=find_packages(),
     install_requires=[
         "",
