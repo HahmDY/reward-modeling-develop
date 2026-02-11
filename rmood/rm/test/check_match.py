@@ -35,6 +35,8 @@ for item in gold_result:
 # rm_results와 gold_results에 같은 거 얼마나 있는지 비교
 same_count = 0
 for rm_result, gold_result in zip(rm_results, gold_results):
+	if rm_result == 0 or gold_result == 0:
+		continue
 	if rm_result == gold_result:
 		same_count += 1
 

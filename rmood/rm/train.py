@@ -73,7 +73,7 @@ def main():
         # Training
         per_device_train_batch_size=16,
         gradient_accumulation_steps=4,
-        warmup_ratio=0.1,
+        warmup_ratio=0.05,
         learning_rate=learning_rate,
         lr_scheduler_type="cosine",
         num_train_epochs=args.num_train_epochs,
