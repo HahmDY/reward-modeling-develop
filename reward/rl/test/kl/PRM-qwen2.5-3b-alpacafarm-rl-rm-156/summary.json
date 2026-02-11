@@ -1,0 +1,23 @@
+{
+  "actor_model_name": "Hahmdong/PRM-qwen2.5-3b-alpacafarm-rl-rm-156",
+  "ref_model_name": "Hahmdong/PRM-qwen2.5-3b-alpacafarm-sft",
+  "kl_loss": 0.2096015625,
+  "metrics": {
+    "actor/kl_loss": 0.2096015625,
+    "num_conversations": 1000,
+    "num_examples": 1000,
+    "num_zero_gen": 0,
+    "mean_gen_len": 495.379,
+    "batches": 125,
+    "batch_size": 8,
+    "agg_mode": "sequence-mean",
+    "scope": "generated_only",
+    "gen_params": {
+      "max_new_tokens": 768,
+      "temperature": 1.0,
+      "top_p": null,
+      "do_sample": true
+    },
+    "num_sequences": 1000
+  }
+}

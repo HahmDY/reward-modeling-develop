@@ -1,0 +1,12 @@
+hf download Hahmdong/PRM-qwen2.5-3b-alpacafarm-rl-rm-50
+hf download Hahmdong/PRM-qwen2.5-3b-alpacafarm-rl-rm-60
+hf download Hahmdong/PRM-qwen2.5-3b-alpacafarm-rl-rm-70
+hf download Hahmdong/PRM-qwen2.5-3b-alpacafarm-rl-rm-80
+hf download Hahmdong/PRM-qwen2.5-3b-alpacafarm-rl-rm-90
+hf download Hahmdong/PRM-qwen2.5-3b-alpacafarm-rl-rm-100
+hf download Hahmdong/PRM-qwen2.5-3b-alpacafarm-rl-rm-110
+hf download Hahmdong/PRM-qwen2.5-3b-alpacafarm-rl-rm-120
+hf download Hahmdong/PRM-qwen2.5-3b-alpacafarm-rl-rm-130
+hf download Hahmdong/PRM-qwen2.5-3b-alpacafarm-rl-rm-140
+hf download Hahmdong/PRM-qwen2.5-3b-alpacafarm-rl-rm-150
+hf download Hahmdong/PRM-qwen2.5-3b-alpacafarm-rl-rm-156
