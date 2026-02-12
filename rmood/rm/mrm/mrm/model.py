@@ -78,7 +78,7 @@ class MRM(Qwen3PreTrainedModel):
         
         # (mu_+ - mu_-)^T Sigma^{-1}
         mu_diff = mu_pos - mu_neg  # [hidden_size]
-        weight = mu_diff @ sigma_inv  # [hidden_size]
+        weight = sigma_inv @ mu_diff  # [hidden_size]
         
         # weight^T f_theta(x,y) + b
         rewards = features @ weight + bias  # [batch_size]

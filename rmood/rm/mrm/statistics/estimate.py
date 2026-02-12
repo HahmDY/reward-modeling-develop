@@ -4,6 +4,7 @@ import argparse
 import torch
 import numpy as np
 from tqdm import tqdm
+from sklearn.covariance import LedoitWolf
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 RMOOD_HOME = os.getenv("RMOOD_HOME")
@@ -221,6 +222,7 @@ def extract_representations(args):
 def compute_gda_parameters(chosen_representations, rejected_representations):
     """
     Compute GDA parameters from the extracted representations.
+    Uses Ledoit-Wolf shrinkage estimator for numerically stable covariance estimation.
     
     Args:
         chosen_representations: numpy array of shape [N, hidden_size]
@@ -230,7 +232,7 @@ def compute_gda_parameters(chosen_representations, rejected_representations):
         mu_pos, mu_neg, sigma, sigma_inv
     """
     print("\n" + "=" * 80)
-    print("Computing GDA parameters...")
+    print("Computing GDA parameters (Ledoit-Wolf shrinkage)...")
     print("=" * 80)
     
     # Compute means
@@ -240,36 +242,25 @@ def compute_gda_parameters(chosen_representations, rejected_representations):
     print(f"μ_+ (chosen mean) shape: {mu_pos.shape}")
     print(f"μ_- (rejected mean) shape: {mu_neg.shape}")
     
-    # Compute pooled covariance matrix
-    # Σ_pooled = (Σ_i (x_i - μ_+)(x_i - μ_+)^T + Σ_j (x_j - μ_-)(x_j - μ_-)^T) / (N_pos + N_neg)	
-    
-    N_pos = chosen_representations.shape[0]
-    N_neg = rejected_representations.shape[0]
-    
-    # Center the data
+    # Center the data by class means
     chosen_centered = chosen_representations - mu_pos
     rejected_centered = rejected_representations - mu_neg
     
-    # Compute sum of outer products (scatter matrices)
-    scatter_pos = chosen_centered.T @ chosen_centered
-    scatter_neg = rejected_centered.T @ rejected_centered
+    # Pool all centered data for within-class covariance estimation
+    all_centered = np.vstack([chosen_centered, rejected_centered])
     
-    # Pooled covariance: sum all then divide by total count
-    sigma = (scatter_pos + scatter_neg) / (N_pos + N_neg)
+    # Ledoit-Wolf shrinkage: Σ_shrunk = (1-α)Σ_sample + α·(tr(Σ)/d)·I
+    # α is automatically estimated from data
+    print(f"Fitting Ledoit-Wolf on {all_centered.shape[0]} samples, {all_centered.shape[1]} dimensions...")
+    lw = LedoitWolf(assume_centered=True)
+    lw.fit(all_centered)
     
-    print(f"Σ (pooled covariance) shape: {sigma.shape}")
+    sigma = lw.covariance_
+    sigma_inv = lw.precision_  # = sigma^{-1}, computed with shrinkage
+    
+    print(f"Σ (shrunk covariance) shape: {sigma.shape}")
     print(f"Σ condition number: {np.linalg.cond(sigma):.2e}")
-    
-    # Compute inverse (with regularization for numerical stability)
-    try:
-        sigma_inv = np.linalg.inv(sigma)
-        print("Successfully computed Σ^{-1}")
-    except np.linalg.LinAlgError:
-        print("Warning: Singular matrix, adding regularization...")
-        epsilon = 1e-6
-        sigma_reg = sigma + epsilon * np.eye(sigma.shape[0])
-        sigma_inv = np.linalg.inv(sigma_reg)
-        print(f"Computed Σ^{{-1}} with regularization (ε={epsilon})")
+    print(f"Ledoit-Wolf shrinkage coefficient (α): {lw.shrinkage_:.6f}")
     
     return mu_pos, mu_neg, sigma, sigma_inv
 
@@ -315,8 +306,10 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    # Extract representations
-    chosen_reps, rejected_reps = extract_representations(args)
+    # # Extract representations
+    # chosen_reps, rejected_reps = extract_representations(args)
+    chosen_reps = np.load(f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/chosen_representations.npy")
+    rejected_reps = np.load(f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/rejected_representations.npy")
     
     # Optionally compute GDA parameters
     if args.compute_gda:
