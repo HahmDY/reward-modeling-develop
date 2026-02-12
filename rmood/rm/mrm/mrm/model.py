@@ -43,9 +43,10 @@ class MRM(Qwen3PreTrainedModel):
         device = self.mu_pos.device
         dtype = self.mu_pos.dtype
         
-        self.mu_pos = torch.tensor(mu_pos, dtype=dtype, device=device)
-        self.mu_neg = torch.tensor(mu_neg, dtype=dtype, device=device)
-        self.sigma_inv = torch.tensor(sigma_inv, dtype=dtype, device=device)
+        # Use copy_() to update buffer values in-place
+        self.mu_pos.copy_(torch.tensor(mu_pos, dtype=dtype, device=device))
+        self.mu_neg.copy_(torch.tensor(mu_neg, dtype=dtype, device=device))
+        self.sigma_inv.copy_(torch.tensor(sigma_inv, dtype=dtype, device=device))
         
         if bias is None:
             # b = 0.5 * (mu_-^T Sigma^{-1} mu_- - mu_+^T Sigma^{-1} mu_+)
@@ -54,7 +55,7 @@ class MRM(Qwen3PreTrainedModel):
                 self.mu_pos @ self.sigma_inv @ self.mu_pos
             )
         
-        self.bias = torch.tensor(bias, dtype=dtype, device=device)
+        self.bias.copy_(torch.tensor(bias, dtype=dtype, device=device))
         self.use_gda_reward = True
     
     def compute_gda_reward(self, features):

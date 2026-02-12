@@ -6,7 +6,7 @@ RMOOD_HOME = os.getenv("RMOOD_HOME")
 model_code = "rm"
 dataset_name = "alpacafarm"
 
-rewards_result_path = f"{RMOOD_HOME}/datasets/{dataset_name}/rm/test_reward_{model_code}.json"
+rewards_result_path = f"{RMOOD_HOME}/datasets/{dataset_name}/rm/test_reward_mrm.json"
 with open(rewards_result_path, "r") as f:
     rewards_result = json.load(f)
 
@@ -19,7 +19,7 @@ for item in rewards_result:
 	else:
 		rm_results.append(0)
 
-gold_result_path = f"{RMOOD_HOME}/datasets/{dataset_name}/rm/test_reward_gold.json"
+gold_result_path = f"{RMOOD_HOME}/datasets/{dataset_name}/rm/test_reward_rm-5e-6.json"
 with open(gold_result_path, "r") as f:
     gold_result = json.load(f)
     
