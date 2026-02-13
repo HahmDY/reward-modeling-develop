@@ -12,7 +12,7 @@ OUTPUT_MODEL_NAME="RMOOD-qwen3-4b-${DATASET_NAME}-rm"
 DATA_FILES="$RMOOD_HOME/datasets/${DATASET_NAME}/rm/rm_implicit.jsonl"
 NUM_TRAIN_EPOCHS=1
 REWARD_MODEL_TYPE="rm"
-LEARNING_RATE=5e-6
+LEARNING_RATE=1e-5
 
 python $RMOOD_HOME/rmood/rm/train.py \
     --model_name $MODEL_NAME \
