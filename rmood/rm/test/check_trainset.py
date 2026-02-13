@@ -52,6 +52,10 @@ def check_training_accuracy(model_path, data_path, num_samples=500):
     correct = 0
     total = 0
     
+    # For debugging
+    reward_diffs = []
+    sample_outputs = []
+    
     with torch.no_grad():
         for idx in tqdm(indices):
             # Prepare texts
@@ -93,6 +97,20 @@ def check_training_accuracy(model_path, data_path, num_samples=500):
             chosen_reward = chosen_output.logits.item()
             rejected_reward = rejected_output.logits.item()
             
+            # Store for analysis
+            diff = chosen_reward - rejected_reward
+            reward_diffs.append(diff)
+            
+            # Store first 5 samples for detailed inspection
+            if len(sample_outputs) < 5:
+                sample_outputs.append({
+                    'idx': int(idx),
+                    'chosen_reward': chosen_reward,
+                    'rejected_reward': rejected_reward,
+                    'diff': diff,
+                    'correct': chosen_reward > rejected_reward
+                })
+            
             # Count
             total += 1
             if chosen_reward > rejected_reward:
@@ -108,9 +126,34 @@ def check_training_accuracy(model_path, data_path, num_samples=500):
     print(f"Accuracy: {accuracy:.2%}")
     print()
     
+    # Debugging statistics
+    print("=" * 80)
+    print("DEBUGGING INFO")
+    print("=" * 80)
+    reward_diffs = np.array(reward_diffs)
+    print(f"Reward difference statistics:")
+    print(f"  Mean: {reward_diffs.mean():.4f}")
+    print(f"  Std:  {reward_diffs.std():.4f}")
+    print(f"  Min:  {reward_diffs.min():.4f}")
+    print(f"  Max:  {reward_diffs.max():.4f}")
+    print(f"  Median: {np.median(reward_diffs):.4f}")
+    print(f"  Positive diffs: {(reward_diffs > 0).sum()} / {len(reward_diffs)} ({(reward_diffs > 0).mean():.2%})")
+    print()
+    
+    print("Sample predictions (first 5):")
+    for i, sample in enumerate(sample_outputs, 1):
+        status = "✓" if sample['correct'] else "✗"
+        print(f"{status} Sample {i} (idx={sample['idx']}):")
+        print(f"    Chosen:   {sample['chosen_reward']:.4f}")
+        print(f"    Rejected: {sample['rejected_reward']:.4f}")
+        print(f"    Diff:     {sample['diff']:.4f}")
+    print()
+    
     if accuracy < 0.70:
         print("❌ VERY BAD: Model didn't learn at all!")
         print("   Problem: Training failed or model corrupted")
+        print("   → Check if model weights were actually updated during training")
+        print("   → Check training logs for loss values")
     elif accuracy < 0.85:
         print("⚠️  POOR: Model barely learned")
         print("   Problem: Insufficient training or learning rate too low")
@@ -127,10 +170,10 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, required=True, default="Hahmdong/RMOOD-qwen3-4b-alpacafarm-rm")
+    parser.add_argument("--model_path", type=str, default="Hahmdong/RMOOD-qwen3-4b-alpacafarm-rm")
     parser.add_argument("--data_path", type=str, 
                        default=f"{os.getenv('RMOOD_HOME')}/datasets/alpacafarm/rm/rm_implicit.jsonl")
-    parser.add_argument("--num_samples", type=int, default=500)
+    parser.add_argument("--num_samples", type=int, default=1000)
     
     args = parser.parse_args()
     
