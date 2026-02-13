@@ -170,7 +170,7 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, default="Hahmdong/RMOOD-qwen3-4b-alpacafarm-rm")
+    parser.add_argument("--model_path", type=str, default="/root/reward-modeling-develop/models/RMOOD-qwen3-4b-alpacafarm-rm/checkpoint-149")
     parser.add_argument("--data_path", type=str, 
                        default=f"{os.getenv('RMOOD_HOME')}/datasets/alpacafarm/rm/rm_implicit.jsonl")
     parser.add_argument("--num_samples", type=int, default=1000)

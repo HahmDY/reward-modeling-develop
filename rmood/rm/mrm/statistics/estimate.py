@@ -65,6 +65,7 @@ def extract_representations(args):
     
     chosen_representations = []
     rejected_representations = []
+    message_representations = []
     
     # Process in batches
     batch_size = args.batch_size
@@ -183,31 +184,99 @@ def extract_representations(args):
             # Convert to numpy and store
             pooled_features_np = pooled_features.cpu().float().numpy()
             rejected_representations.extend(pooled_features_np)
+        
+        # Process messages only (without response) for center initialization
+        print("\nProcessing message-only representations (without response)...")
+        for i in tqdm(range(0, num_samples, batch_size)):
+            batch_messages = chosen_messages[i:i + batch_size]
+            
+            # Tokenize messages without the last assistant response
+            batch_texts = []
+            for messages in batch_messages:
+                # Remove the last assistant message (response)
+                messages_only = [msg for msg in messages if msg.get("role") != "assistant"]
+                if not messages_only:
+                    # If no user messages, use the original but mark for generation
+                    messages_only = [msg for msg in messages[:-1]] if len(messages) > 1 else messages
+                
+                # Apply chat template to format the messages
+                text = tokenizer.apply_chat_template(
+                    messages_only,
+                    tokenize=False,
+                    add_generation_prompt=True
+                )
+                batch_texts.append(text)
+            
+            # Tokenize batch
+            inputs = tokenizer(
+                batch_texts,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=args.max_length
+            )
+            
+            # Move to device
+            inputs = {k: v.to(model.device) for k, v in inputs.items()}
+            
+            # Forward pass
+            outputs = model(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                output_hidden_states=True
+            )
+            
+            # Extract hidden states (last hidden state)
+            hidden_states = outputs.hidden_states[-1]  # [batch_size, seq_len, hidden_size]
+            
+            # Get the last non-pad token representation for each sample
+            batch_size_actual = inputs["input_ids"].shape[0]
+            input_ids = inputs["input_ids"]
+            
+            # Find last non-pad token position
+            non_pad_mask = (input_ids != model.config.pad_token_id).to(hidden_states.device, torch.int32)
+            token_indices = torch.arange(input_ids.shape[-1], device=hidden_states.device, dtype=torch.int32)
+            last_non_pad_token = (token_indices * non_pad_mask).argmax(-1)
+            
+            # Extract pooled features
+            pooled_features = hidden_states[
+                torch.arange(batch_size_actual, device=hidden_states.device),
+                last_non_pad_token
+            ]  # [batch_size, hidden_size]
+            
+            # Convert to numpy and store
+            pooled_features_np = pooled_features.cpu().float().numpy()
+            message_representations.extend(pooled_features_np)
     
     # Convert to numpy arrays
     chosen_representations = np.array(chosen_representations)
     rejected_representations = np.array(rejected_representations)
+    message_representations = np.array(message_representations)
     
     print("\n" + "=" * 80)
     print("Representation extraction completed!")
     print("=" * 80)
     print(f"Chosen representations shape: {chosen_representations.shape}")
     print(f"Rejected representations shape: {rejected_representations.shape}")
+    print(f"Message-only representations shape: {message_representations.shape}")
     
     # Save representations
     os.makedirs(args.output_dir, exist_ok=True)
     
     chosen_output_path = os.path.join(args.output_dir, "chosen_representations.npy")
     rejected_output_path = os.path.join(args.output_dir, "rejected_representations.npy")
+    message_output_path = os.path.join(args.output_dir, "message_representations.npy")
     
     np.save(chosen_output_path, chosen_representations)
     np.save(rejected_output_path, rejected_representations)
+    np.save(message_output_path, message_representations)
     
     print("\n" + "=" * 80)
     print("Saved representations:")
     print("=" * 80)
     print(f"Chosen: {chosen_output_path}")
     print(f"Rejected: {rejected_output_path}")
+    print(f"Message-only: {message_output_path}")
     
     # Print statistics
     print("\n" + "=" * 80)
@@ -215,8 +284,9 @@ def extract_representations(args):
     print("=" * 80)
     print(f"Chosen - Mean: {chosen_representations.mean():.4f}, Std: {chosen_representations.std():.4f}")
     print(f"Rejected - Mean: {rejected_representations.mean():.4f}, Std: {rejected_representations.std():.4f}")
+    print(f"Message-only - Mean: {message_representations.mean():.4f}, Std: {message_representations.std():.4f}")
     
-    return chosen_representations, rejected_representations
+    return chosen_representations, rejected_representations, message_representations
 
 
 def compute_gda_parameters(chosen_representations, rejected_representations):
@@ -307,7 +377,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # # Extract representations
-    # chosen_reps, rejected_reps = extract_representations(args)
+    # chosen_reps, rejected_reps, message_reps = extract_representations(args)
     chosen_reps = np.load(f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/chosen_representations.npy")
     rejected_reps = np.load(f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/rejected_representations.npy")
     
