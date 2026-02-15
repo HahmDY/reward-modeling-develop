@@ -377,9 +377,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # # Extract representations
-    # chosen_reps, rejected_reps, message_reps = extract_representations(args)
-    chosen_reps = np.load(f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/chosen_representations.npy")
-    rejected_reps = np.load(f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/rejected_representations.npy")
+    chosen_reps, rejected_reps, message_reps = extract_representations(args)
+    # chosen_reps = np.load(f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/chosen_representations.npy")
+    # rejected_reps = np.load(f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/rejected_representations.npy")
     
     # Optionally compute GDA parameters
     if args.compute_gda:

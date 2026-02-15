@@ -88,13 +88,15 @@ def worker(
 ):
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
     
-    from tampering.utils.llm import VLLM
+    from rmood.utils.llm import VLLM
 
     indices = shard_indices(len(source_data), rank, world)
 
     data = merge_source_and_existing(source_data, existing_data, num_responses)
 
     partial_out = {}
+    sampled_count = 0  # Track newly sampled prompts
+    skipped_count = 0  # Track skipped prompts
 
     pbar = tqdm(indices, total=len(indices), desc=f"GPU{gpu_id}", position=tqdm_position, leave=True)
     llm = None
@@ -103,7 +105,8 @@ def worker(
         for cnt, i in enumerate(pbar, start=1):
             item = data[i]
             if has_all_responses(item, num_responses):
-                pbar.set_postfix_str(f"skip {i}")
+                skipped_count += 1
+                pbar.set_postfix_str(f"skip {i} | sampled: {sampled_count}, skipped: {skipped_count}")
                 continue
 
             messages = [{"role": "system", "content": ""}] + deepcopy(item["messages"])
@@ -118,12 +121,14 @@ def worker(
 
             new_item = {f"response_{j+1}": responses[j] for j in range(num_responses)}
             partial_out[i] = new_item
+            sampled_count += 1
 
             if save_every and (cnt % save_every == 0):
                 save_partial(part_path, partial_out)
-                pbar.set_postfix_str(f"saved {len(partial_out)} items")
+                pbar.set_postfix_str(f"saved {len(partial_out)} | sampled: {sampled_count}, skipped: {skipped_count}")
     finally:
         save_partial(part_path, partial_out)
+        print(f"\n[GPU{gpu_id}] Summary: {sampled_count} prompts sampled, {skipped_count} prompts skipped")
 
 def merge_parts_into_target(source_data: list, existing_data: list, part_paths: List[str], target_path: str, num_responses: int, original_indices: List[int] = None):
     merged = merge_source_and_existing(source_data, existing_data, num_responses)
@@ -184,6 +189,16 @@ def main_parallel(gpus: List[int], model_name: str, source_data: list, target_pa
         p.join()
 
     merge_parts_into_target(source_data, existing_data, part_paths, target_path, num_responses, original_indices)
+    
+    # Print overall statistics
+    total_sampled = sum(1 for pp in part_paths for _ in (load_json_if_exists(pp) or {}).items())
+    total_prompts = len(source_data)
+    print(f"\n{'='*60}")
+    print(f"Overall Summary:")
+    print(f"  Total prompts: {total_prompts}")
+    print(f"  Newly sampled: {total_sampled}")
+    print(f"  Each sampled prompt generated: {num_responses} responses")
+    print(f"{'='*60}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

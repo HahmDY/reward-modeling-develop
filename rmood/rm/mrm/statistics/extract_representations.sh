@@ -13,7 +13,7 @@ RMOOD_HOME="${RMOOD_HOME:-$(cd $SCRIPT_DIR/../../../.. && pwd)}"
 MODEL_PATH="${1:-Hahmdong/RMOOD-qwen3-4b-alpacafarm-rm}"
 DATA_PATH="${2:-$RMOOD_HOME/datasets/alpacafarm/rm/rm_implicit.jsonl}"
 OUTPUT_DIR="${3:-$RMOOD_HOME/datasets/alpacafarm/rm/representations}"
-BATCH_SIZE="${4:-64}"
+BATCH_SIZE="${4:-16}"
 MAX_LENGTH="${5:-2048}"
 
 echo "=================================================="
