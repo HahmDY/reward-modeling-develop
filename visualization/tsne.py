@@ -12,6 +12,9 @@ import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 from pathlib import Path
 import argparse
+import torch
+from transformers import AutoModelForSequenceClassification
+from scipy.stats import pearsonr
 
 RMOOD_HOME = os.getenv('RMOOD_HOME')
 
@@ -118,10 +121,76 @@ def apply_tsne(X, n_components=2, perplexity=30, random_state=42, n_iter=1000):
     return X_tsne
 
 
-def visualize_tsne(X_tsne, y, save_path=None, title="t-SNE Visualization of Chosen vs Rejected", 
-                   figsize=(12, 8), alpha=0.6, s=20):
+def load_score_weight(model_name_or_path):
     """
-    Visualize t-SNE results
+    Load the score.weight vector from a reward model
+    
+    Args:
+        model_name_or_path: HuggingFace model name or local path
+    
+    Returns:
+        weight vector as numpy array (shape: [hidden_dim])
+    """
+    print(f"\nLoading score.weight from model: {model_name_or_path}")
+    
+    try:
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_name_or_path,
+            torch_dtype=torch.float32
+        )
+        
+        # Get the score weight vector
+        score_weight = model.score.weight.detach().cpu().numpy()
+        print(f"  Score weight shape: {score_weight.shape}")
+        
+        # score.weight is typically (1, hidden_dim), so flatten it
+        if len(score_weight.shape) == 2 and score_weight.shape[0] == 1:
+            score_weight = score_weight.flatten()
+        
+        return score_weight
+    except Exception as e:
+        print(f"  Error loading model: {e}")
+        return None
+
+
+def project_weight_to_tsne(weight_vector, X_original, X_tsne):
+    """
+    Project the weight vector onto the t-SNE space by finding its direction
+    
+    Args:
+        weight_vector: the score.weight vector in original space (shape: [hidden_dim])
+        X_original: original representations before t-SNE (shape: [N, hidden_dim])
+        X_tsne: t-SNE transformed representations (shape: [N, 2])
+    
+    Returns:
+        direction in t-SNE space (2D vector)
+    """
+    print("\nProjecting weight vector to t-SNE space...")
+    
+    # Compute projections of all points onto the weight vector
+    # projections[i] = dot(X_original[i], weight_vector) / ||weight_vector||
+    weight_norm = np.linalg.norm(weight_vector)
+    projections = np.dot(X_original, weight_vector) / (weight_norm + 1e-10)
+    
+    # Find correlation between projections and t-SNE coordinates
+    # This gives us the direction in t-SNE space that best corresponds to the weight direction
+    corr_dim1, _ = pearsonr(projections, X_tsne[:, 0])
+    corr_dim2, _ = pearsonr(projections, X_tsne[:, 1])
+    
+    direction = np.array([corr_dim1, corr_dim2])
+    direction = direction / (np.linalg.norm(direction) + 1e-10)
+    
+    print(f"  Weight vector direction in t-SNE space: [{direction[0]:.4f}, {direction[1]:.4f}]")
+    print(f"  Correlation with t-SNE dim1: {corr_dim1:.4f}")
+    print(f"  Correlation with t-SNE dim2: {corr_dim2:.4f}")
+    
+    return direction, projections
+
+
+def visualize_tsne(X_tsne, y, save_path=None, title="t-SNE Visualization of Chosen vs Rejected", 
+                   figsize=(12, 8), alpha=0.6, s=20, weight_direction=None, projections=None):
+    """
+    Visualize t-SNE results with optional weight vector direction
     
     Args:
         X_tsne: t-SNE transformed features (N x 2)
@@ -131,6 +200,8 @@ def visualize_tsne(X_tsne, y, save_path=None, title="t-SNE Visualization of Chos
         figsize: figure size
         alpha: transparency of points
         s: size of points
+        weight_direction: 2D direction vector of score.weight in t-SNE space (optional)
+        projections: projection values onto weight vector for coloring (optional)
     """
     plt.figure(figsize=figsize)
     
@@ -157,6 +228,45 @@ def visualize_tsne(X_tsne, y, save_path=None, title="t-SNE Visualization of Chos
         s=s,
         edgecolors='none'
     )
+    
+    # Plot weight vector direction if provided
+    if weight_direction is not None:
+        # Get center of the plot
+        center_x = np.mean(X_tsne[:, 0])
+        center_y = np.mean(X_tsne[:, 1])
+        
+        # Calculate arrow length (scale to be visible)
+        data_range = max(np.ptp(X_tsne[:, 0]), np.ptp(X_tsne[:, 1]))
+        arrow_scale = data_range * 0.3
+        
+        # Draw arrow
+        plt.arrow(
+            center_x, center_y,
+            weight_direction[0] * arrow_scale,
+            weight_direction[1] * arrow_scale,
+            head_width=data_range * 0.05,
+            head_length=data_range * 0.05,
+            fc='green',
+            ec='green',
+            linewidth=3,
+            alpha=0.8,
+            length_includes_head=True,
+            label='score.weight direction',
+            zorder=5
+        )
+        
+        # Add text annotation
+        text_x = center_x + weight_direction[0] * arrow_scale * 1.2
+        text_y = center_y + weight_direction[1] * arrow_scale * 1.2
+        plt.text(
+            text_x, text_y,
+            'score.weight',
+            fontsize=11,
+            fontweight='bold',
+            color='green',
+            ha='center',
+            bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.7)
+        )
     
     plt.xlabel('t-SNE Dimension 1', fontsize=12)
     plt.ylabel('t-SNE Dimension 2', fontsize=12)
@@ -197,7 +307,7 @@ def main():
     parser.add_argument(
         '--sample_size',
         type=int,
-        default=500,
+        default=30,
         help='Number of samples to use from each class (default: 5000)'
     )
     parser.add_argument(
@@ -240,8 +350,20 @@ def main():
     parser.add_argument(
         '--center_by_prompt',
         action='store_true',
-        default=True,
+        default=False,
         help='Center each (chosen, rejected) pair by their mean before t-SNE'
+    )
+    parser.add_argument(
+        '--model_name',
+        type=str,
+        default='Hahmdong/RMOOD-qwen3-4b-alpacafarm-rm',
+        help='HuggingFace model name or path to load score.weight from'
+    )
+    parser.add_argument(
+        '--show_weight_direction',
+        action='store_true',
+        default=True,
+        help='Show the direction of score.weight vector in t-SNE space'
     )
     
     args = parser.parse_args()
@@ -259,6 +381,20 @@ def main():
     # Prepare data
     X, y = prepare_data(chosen, rejected, sample_size=args.sample_size, center_by_prompt=args.center_by_prompt)
     
+    # Load score.weight if requested
+    weight_direction = None
+    projections = None
+    if args.show_weight_direction:
+        weight_vector = load_score_weight(args.model_name)
+        if weight_vector is not None and weight_vector.shape[0] == X.shape[1]:
+            # We'll compute the direction after t-SNE
+            pass
+        elif weight_vector is not None:
+            print(f"Warning: weight vector dimension ({weight_vector.shape[0]}) does not match representation dimension ({X.shape[1]})")
+            weight_vector = None
+    else:
+        weight_vector = None
+    
     # Apply t-SNE
     X_tsne = apply_tsne(
         X, 
@@ -267,6 +403,10 @@ def main():
         random_state=args.random_seed,
         n_iter=args.n_iter
     )
+    
+    # Project weight vector to t-SNE space if available
+    if weight_vector is not None:
+        weight_direction, projections = project_weight_to_tsne(weight_vector, X, X_tsne)
     
     # Visualize
     print("\nCreating visualization...")
@@ -281,7 +421,9 @@ def main():
         title=title,
         figsize=tuple(args.figsize),
         alpha=args.alpha,
-        s=args.point_size
+        s=args.point_size,
+        weight_direction=weight_direction,
+        projections=projections
     )
     
     print("\n" + "=" * 60)

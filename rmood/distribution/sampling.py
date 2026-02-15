@@ -6,14 +6,14 @@ from tqdm import tqdm
 from tempfile import NamedTemporaryFile
 from multiprocessing import Process, set_start_method, Queue
 from typing import List
-from rmood.utils.llm import VLLM
 
 RMOOD_HOME = os.getenv("RMOOD_HOME")
 
-def get_response_keys(num_responses: int) -> tuple:
+def get_resp_keys(num_responses: int):
     return tuple(f"response_{i+1}" for i in range(num_responses))
 
-def has_all_responses(item: dict, resp_keys: tuple) -> bool:
+def has_all_responses(item: dict, num_responses: int) -> bool:
+    resp_keys = get_resp_keys(num_responses)
     return all(k in item and item[k] not in (None, "") for k in resp_keys)
 
 def atomic_write_json(obj, path: str):
@@ -49,8 +49,9 @@ def pad_or_trim(existing: list, target_len: int):
         out = out[:target_len]
     return out
 
-def merge_source_and_existing(source: list, existing: list, resp_keys: tuple):
+def merge_source_and_existing(source: list, existing: list, num_responses: int):
     merged = []
+    resp_keys = get_resp_keys(num_responses)
     for i in range(len(source)):
         base = deepcopy(source[i])
         if existing and i < len(existing) and isinstance(existing[i], dict):
@@ -63,6 +64,7 @@ def merge_source_and_existing(source: list, existing: list, resp_keys: tuple):
 
 
 def parse_gpus(gpus_arg: str) -> List[int]:
+    # "0,2,5" -> [0,2,5]
     parts = [p.strip() for p in gpus_arg.split(",") if p.strip() != ""]
     return [int(p) for p in parts]
 
@@ -80,19 +82,17 @@ def worker(
     source_data: list,
     existing_data: list,
     part_path: str,
-    num_responses: int = 2,
-    temperature: float = 1.0,
-    max_new_tokens: int = 1024,
-    top_p: float = 1.0,
+    num_responses: int,
     save_every: int = 1,
     tqdm_position: int = 0,
 ):
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+    
+    from tampering.utils.llm import VLLM
 
     indices = shard_indices(len(source_data), rank, world)
-    
-    resp_keys = get_response_keys(num_responses)
-    data = merge_source_and_existing(source_data, existing_data, resp_keys)
+
+    data = merge_source_and_existing(source_data, existing_data, num_responses)
 
     partial_out = {}
 
@@ -102,20 +102,22 @@ def worker(
         llm = VLLM(model_name=model_name)
         for cnt, i in enumerate(pbar, start=1):
             item = data[i]
-            if has_all_responses(item, resp_keys):
+            if has_all_responses(item, num_responses):
                 pbar.set_postfix_str(f"skip {i}")
                 continue
 
-            messages = deepcopy(item["messages"])
+            messages = [{"role": "system", "content": ""}] + deepcopy(item["messages"])
+            
+            temperature = 1.0
+            top_p = 1.0
+            responses = []
+            
+            for j in range(num_responses):
+                response = llm.generate(messages, temperature=temperature, max_new_tokens=1024, top_p=top_p)
+                responses.append(response)
 
-            # Generate num_responses responses
-            responses = {}
-            for resp_idx in range(num_responses):
-                response_key = f"response_{resp_idx+1}"
-                response = llm.generate(messages, temperature=temperature, max_new_tokens=max_new_tokens, top_p=top_p)
-                responses[response_key] = response
-
-            partial_out[i] = responses
+            new_item = {f"response_{j+1}": responses[j] for j in range(num_responses)}
+            partial_out[i] = new_item
 
             if save_every and (cnt % save_every == 0):
                 save_partial(part_path, partial_out)
@@ -123,8 +125,8 @@ def worker(
     finally:
         save_partial(part_path, partial_out)
 
-def merge_parts_into_target(source_data: list, existing_data: list, part_paths: List[str], target_path: str, resp_keys: tuple):
-    merged = merge_source_and_existing(source_data, existing_data, resp_keys)
+def merge_parts_into_target(source_data: list, existing_data: list, part_paths: List[str], target_path: str, num_responses: int, original_indices: List[int] = None):
+    merged = merge_source_and_existing(source_data, existing_data, num_responses)
 
     for pp in part_paths:
         part = load_json_if_exists(pp)
@@ -135,26 +137,18 @@ def merge_parts_into_target(source_data: list, existing_data: list, part_paths: 
             idx = int(k)
             merged[idx] = v
 
-    atomic_write_json(merged, target_path)
+    # If original_indices is provided, save each index to a separate file
+    if original_indices:
+        for i, orig_idx in enumerate(original_indices):
+            single_file_path = target_path.replace("_PLACEHOLDER", f"_{orig_idx}")
+            atomic_write_json([merged[i]], single_file_path)
+    else:
+        atomic_write_json(merged, target_path)
 
-def main_parallel(
-    gpus: List[int], 
-    model_name: str, 
-    source_path: str, 
-    target_path: str, 
-    num_responses: int = 2,
-    temperature: float = 1.0,
-    max_new_tokens: int = 1024,
-    top_p: float = 1.0,
-    save_every: int = 1
-):
-    with open(source_path, "r") as f:
-        source_data = json.load(f)
+def main_parallel(gpus: List[int], model_name: str, source_data: list, target_path: str, num_responses: int = 16, save_every: int = 1, original_indices: List[int] = None):
 
     existing_data = load_json_if_exists(target_path)
     existing_data = pad_or_trim(existing_data, len(source_data))
-    
-    resp_keys = get_response_keys(num_responses)
 
     part_paths = [f"{target_path}.gpu{gid}.part.json" for gid in gpus]
 
@@ -178,9 +172,6 @@ def main_parallel(
                 existing_data=existing_data,
                 part_path=part_paths[rank],
                 num_responses=num_responses,
-                temperature=temperature,
-                max_new_tokens=max_new_tokens,
-                top_p=top_p,
                 save_every=save_every,
                 tqdm_position=rank,
             ),
@@ -192,40 +183,32 @@ def main_parallel(
     for p in procs:
         p.join()
 
-    merge_parts_into_target(source_data, existing_data, part_paths, target_path, resp_keys)
+    merge_parts_into_target(source_data, existing_data, part_paths, target_path, num_responses, original_indices)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, required=True,
-                        default="")
+                        default="Hahmdong/AT-qwen2.5-7b-hhrlhf-5120-sft-ai-b3s3-ver17")
     parser.add_argument("--source_path", type=str, required=True,
-                        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/rm.json")
-    parser.add_argument("--target_path", type=str, required=True,
-                        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/rm_sft.json")
-    parser.add_argument("--num_responses", type=int, default=2,
-                        help="Number of responses to generate per prompt")
-    parser.add_argument("--temperature", type=float, default=1.0,
-                        help="Temperature for sampling")
-    parser.add_argument("--max_new_tokens", type=int, default=1024,
-                        help="Maximum number of new tokens to generate")
-    parser.add_argument("--top_p", type=float, default=1.0,
-                        help="Top-p (nucleus) sampling parameter")
+                        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/rm_prompts.json")
+    parser.add_argument("--indices", type=str, required=True, help="comma-separated indices to process, e.g. '0,1,2'")
+    parser.add_argument("--num_responses", type=int, default=16, help="number of responses to generate per item")
     parser.add_argument("--save_every", type=int, default=1)
-    parser.add_argument("--gpus", type=str, required=True, help="comma-separated GPU ids, e.g. '6'")
+    parser.add_argument("--gpus", type=str, required=True, help="comma-separated GPU ids, e.g. '6'", default="6,7")
     args = parser.parse_args()
 
     gpus = parse_gpus(args.gpus)
     if not gpus:
         raise ValueError("No GPUs provided. Use --gpus like '0,1,2'.")
+    
+    with open(args.source_path, "r") as f:
+        source_data_raw = json.load(f)
+    indices = [int(i) for i in args.indices.split(",")]
+    source_data = [source_data_raw[i] for i in indices]
+    
+    model_name_clean = args.model_name.replace("/", "_")
+    # Use PLACEHOLDER in target path - will be replaced per index in merge_parts_into_target
+    target_path = f"{RMOOD_HOME}/datasets/alpacafarm/distribution/{model_name_clean}/responses_PLACEHOLDER.json"
 
-    main_parallel(
-        gpus, 
-        args.model_name, 
-        args.source_path, 
-        args.target_path, 
-        num_responses=args.num_responses,
-        temperature=args.temperature,
-        max_new_tokens=args.max_new_tokens,
-        top_p=args.top_p,
-        save_every=args.save_every
-    )
+    print(f"Processing {len(indices)} indices: {indices}")
+    main_parallel(gpus, args.model_name, source_data, target_path, args.num_responses, args.save_every, original_indices=indices)
