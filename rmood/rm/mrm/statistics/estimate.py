@@ -38,6 +38,8 @@ def extract_representations(args):
     tokenizer.pad_token = tokenizer.eos_token
     model.config.pad_token_id = tokenizer.pad_token_id
     
+    clean_model_name = args.model_path.replace("/", "--")
+    
     print(f"Model loaded from: {args.model_path}")
     print(f"Model device: {model.device}")
     
@@ -261,11 +263,12 @@ def extract_representations(args):
     print(f"Message-only representations shape: {message_representations.shape}")
     
     # Save representations
-    os.makedirs(args.output_dir, exist_ok=True)
+    output_dir = os.path.join(args.output_dir, clean_model_name)
+    os.makedirs(output_dir, exist_ok=True)
     
-    chosen_output_path = os.path.join(args.output_dir, "chosen_representations.npy")
-    rejected_output_path = os.path.join(args.output_dir, "rejected_representations.npy")
-    message_output_path = os.path.join(args.output_dir, "message_representations.npy")
+    chosen_output_path = os.path.join(output_dir, "chosen_representations.npy")
+    rejected_output_path = os.path.join(output_dir, "rejected_representations.npy")
+    message_output_path = os.path.join(output_dir, "message_representations.npy")
     
     np.save(chosen_output_path, chosen_representations)
     np.save(rejected_output_path, rejected_representations)
@@ -386,7 +389,10 @@ if __name__ == "__main__":
         mu_pos, mu_neg, sigma, sigma_inv = compute_gda_parameters(chosen_reps, rejected_reps)
         
         # Save GDA parameters
-        gda_output_path = os.path.join(args.output_dir, "gda_parameters.npz")
+        clean_model_name = args.model_path.replace("/", "--")
+        output_dir = os.path.join(args.output_dir, clean_model_name)
+        os.makedirs(output_dir, exist_ok=True)
+        gda_output_path = os.path.join(output_dir, "gda_parameters.npz")
         np.savez(
             gda_output_path,
             mu_pos=mu_pos,
