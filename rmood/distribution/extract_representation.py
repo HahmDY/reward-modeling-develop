@@ -71,7 +71,10 @@ def main(model_name_sampling, model_name_rm, idx, batch_size):
 	model_name_rm_clean = model_name_rm.replace("/", "_")
  
 	responses_path = f"{RMOOD_HOME}/datasets/alpacafarm/distribution/{model_name_sampling_clean}/responses_{idx}.json"
-	target_path = f"{RMOOD_HOME}/datasets/alpacafarm/distribution/{model_name_rm_clean}/representation_{idx}.npy"
+	target_dir = f"{RMOOD_HOME}/datasets/alpacafarm/distribution/{model_name_rm_clean}"
+	if not os.path.exists(target_dir):
+		os.makedirs(target_dir)
+	target_path = f"{target_dir}/representation_{idx}.npy"
     
 	responses = load_responses(responses_path)
 	batch_num = 512 // batch_size
@@ -80,7 +83,7 @@ def main(model_name_sampling, model_name_rm, idx, batch_size):
 		batch_responses = responses[i * batch_size:(i + 1) * batch_size]
 		representations = get_batched_representations(batch_responses, encoder, tokenizer, batch_size)
 		all_representations.extend(representations)
-  
+
 	with open(target_path, "wb") as f:
 		np.save(f, np.array(all_representations))
 
