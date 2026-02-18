@@ -341,8 +341,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_path",
         type=str,
-        required=True,
-        help="Path to the trained MRM model"
+        default=None,
+        help="Path to the trained MRM model (not required if --load_representations is set)"
     )
     parser.add_argument(
         "--data_path",
@@ -353,8 +353,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output_dir",
         type=str,
-        default=f"{RMOOD_HOME}/representations",
-        help="Directory to save the extracted representations"
+        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations",
+        help="Directory to save the extracted representations and GDA parameters"
     )
     parser.add_argument(
         "--batch_size",
@@ -373,18 +373,53 @@ if __name__ == "__main__":
         action="store_true",
         help="Compute and save difference-based GDA parameters (mu_d, sigma, sigma_inv)"
     )
-    
+    # --- load pre-existing representations ---
+    parser.add_argument(
+        "--load_representations",
+        action="store_true",
+        help="Skip model forward pass and load representations from existing .npy files"
+    )
+    parser.add_argument(
+        "--chosen_path",
+        type=str,
+        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/chosen_representations.npy",
+        help="Path to pre-extracted chosen representations (used with --load_representations)"
+    )
+    parser.add_argument(
+        "--rejected_path",
+        type=str,
+        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/rejected_representations.npy",
+        help="Path to pre-extracted rejected representations (used with --load_representations)"
+    )
+    parser.add_argument(
+        "--message_path",
+        type=str,
+        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/message_representations.npy",
+        help="Path to pre-extracted message-only representations (used with --load_representations)"
+    )
+
     args = parser.parse_args()
-    
-    chosen_reps, rejected_reps, message_reps = extract_representations(args)
-    
+
+    if args.load_representations:
+        print("=" * 80)
+        print("Loading pre-existing representations...")
+        print("=" * 80)
+        chosen_reps  = np.load(args.chosen_path)
+        rejected_reps = np.load(args.rejected_path)
+        message_reps  = np.load(args.message_path)
+        print(f"  chosen   shape: {chosen_reps.shape}")
+        print(f"  rejected shape: {rejected_reps.shape}")
+        print(f"  message  shape: {message_reps.shape}")
+    else:
+        if args.model_path is None:
+            raise ValueError("--model_path is required when --load_representations is not set")
+        chosen_reps, rejected_reps, message_reps = extract_representations(args)
+
     if args.compute_gda:
         mu_d, sigma, sigma_inv = compute_gda_parameters(chosen_reps, rejected_reps)
-        
-        clean_model_name = args.model_path.replace("/", "--")
-        output_dir = os.path.join(args.output_dir, clean_model_name)
-        os.makedirs(output_dir, exist_ok=True)
-        gda_output_path = os.path.join(output_dir, "gda_parameters.npz")
+
+        os.makedirs(args.output_dir, exist_ok=True)
+        gda_output_path = os.path.join(args.output_dir, "gda_parameters.npz")
         np.savez(
             gda_output_path,
             mu_d=mu_d,
