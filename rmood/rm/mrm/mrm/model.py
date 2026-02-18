@@ -19,70 +19,50 @@ class MRM(Qwen3PreTrainedModel):
         self.model = Qwen3Model(config)
         self.score = nn.Linear(config.hidden_size, self.num_labels, bias=False)
         
-        # R(x,y) = (mu_+ - mu_-)^T Sigma^{-1} f_theta(x,y) + b
+        # R(x,y) = 2 * mu_d^T Sigma_d^{-1} f_theta(x,y)
+        # where mu_d = E[chosen - rejected], Sigma_d = Cov(chosen - rejected)
         hidden_size = config.hidden_size
-        self.register_buffer('mu_pos', torch.zeros(hidden_size))  # μ_+
-        self.register_buffer('mu_neg', torch.zeros(hidden_size))  # μ_-
-        self.register_buffer('sigma_inv', torch.eye(hidden_size))  # Σ^{-1}
-        self.register_buffer('bias', torch.tensor(0.0))  # b
+        self.register_buffer('mu_d', torch.zeros(hidden_size))   # E[d_i]
+        self.register_buffer('sigma_inv', torch.eye(hidden_size))  # Σ_d^{-1}
         self.use_gda_reward = True
 
         # Initialize weights and apply final processing
         self.post_init()
     
-    def set_gda_params(self, mu_pos, mu_neg, sigma_inv, bias=None):
+    def set_gda_params(self, mu_d, sigma_inv):
         """
-        Set GDA parameters
-        
+        Set difference-based GDA parameters.
+
         Args:
-            mu_pos: average vector of positive samples (shape: [hidden_size])
-            mu_neg: average vector of negative samples (shape: [hidden_size])
-            sigma_inv: inverse of the covariance matrix (shape: [hidden_size, hidden_size])
-            bias: bias term (optional, automatically calculated)
+            mu_d:      mean of difference vectors E[chosen - rejected]  (shape: [hidden_size])
+            sigma_inv: inverse covariance of difference vectors Σ_d^{-1} (shape: [hidden_size, hidden_size])
         """
-        device = self.mu_pos.device
-        dtype = self.mu_pos.dtype
-        
-        # Use copy_() to update buffer values in-place
-        self.mu_pos.copy_(torch.tensor(mu_pos, dtype=dtype, device=device))
-        self.mu_neg.copy_(torch.tensor(mu_neg, dtype=dtype, device=device))
+        device = self.mu_d.device
+        dtype = self.mu_d.dtype
+
+        self.mu_d.copy_(torch.tensor(mu_d, dtype=dtype, device=device))
         self.sigma_inv.copy_(torch.tensor(sigma_inv, dtype=dtype, device=device))
-        
-        if bias is None:
-            # b = 0.5 * (mu_-^T Sigma^{-1} mu_- - mu_+^T Sigma^{-1} mu_+)
-            bias = 0.5 * (
-                self.mu_neg @ self.sigma_inv @ self.mu_neg -
-                self.mu_pos @ self.sigma_inv @ self.mu_pos
-            )
-        
-        self.bias.copy_(torch.tensor(bias, dtype=dtype, device=device))
         self.use_gda_reward = True
     
     def compute_gda_reward(self, features):
         """
-        GDA based reward calculation
-        R(x,y) = (mu_+ - mu_-)^T Sigma^{-1} f_theta(x,y) + b
+        Difference-based GDA reward:
+        R(x,y) = 2 * mu_d^T Sigma_d^{-1} f_theta(x,y)
         
         Args:
-            features: model's hidden representation (shape: [batch_size, hidden_size])
+            features: hidden representation (shape: [batch_size, hidden_size])
         
         Returns:
             rewards: (shape: [batch_size])
         """
-        # Move all GDA parameters to the same device as features
         device = features.device
-        mu_pos = self.mu_pos.to(device)
-        mu_neg = self.mu_neg.to(device)
+        mu_d      = self.mu_d.to(device)
         sigma_inv = self.sigma_inv.to(device)
-        bias = self.bias.to(device)
-        
-        # (mu_+ - mu_-)^T Sigma^{-1}
-        mu_diff = mu_pos - mu_neg  # [hidden_size]
-        weight = sigma_inv @ mu_diff  # [hidden_size]
-        
-        # weight^T f_theta(x,y) + b
-        rewards = features @ weight + bias  # [batch_size]
-        
+
+        # w = 2 * Σ_d^{-1} μ_d
+        weight = 2.0 * sigma_inv @ mu_d  # [hidden_size]
+        rewards = features @ weight       # [batch_size]
+
         return rewards
 
     def get_input_embeddings(self):

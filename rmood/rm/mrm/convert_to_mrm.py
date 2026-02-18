@@ -13,21 +13,20 @@ RMOOD_HOME = os.getenv("RMOOD_HOME")
 def load_gda_parameters():
     parameters_path = f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/gda_parameters.npz"
     with np.load(parameters_path) as data:
-        mu_pos = data["mu_pos"]
-        mu_neg = data["mu_neg"]
+        mu_d      = data["mu_d"]
         sigma_inv = data["sigma_inv"]
-        
-    return mu_pos, mu_neg, sigma_inv
+    return mu_d, sigma_inv
 
 
-def convert_qwen3_to_mrm(base_model, mu_pos, mu_neg, sigma_inv):
+def convert_qwen3_to_mrm(base_model, mu_d, sigma_inv):
     """
-    Convert Qwen3ForSequenceClassification model to MRM
-    
+    Convert Qwen3ForSequenceClassification model to MRM.
+
     Args:
         base_model: Trained Qwen3ForSequenceClassification model
-        mu_pos, mu_neg, sigma_inv: GDA parameters
-    
+        mu_d:      mean of difference vectors E[chosen - rejected]  [hidden_size]
+        sigma_inv: Σ_d^{-1} (Ledoit-Wolf)                          [hidden_size, hidden_size]
+
     Returns:
         mrm_model: MRM model
     """
@@ -42,9 +41,9 @@ def convert_qwen3_to_mrm(base_model, mu_pos, mu_neg, sigma_inv):
     mrm_model.model.load_state_dict(base_model.model.state_dict())
     mrm_model.score.load_state_dict(base_model.score.state_dict())
     
-    # 3. Set GDA parameters
+    # 3. Set difference-based GDA parameters
     print(f"Setting GDA parameters...")
-    mrm_model.set_gda_params(mu_pos, mu_neg, sigma_inv)
+    mrm_model.set_gda_params(mu_d, sigma_inv)
     
     # 4. Match dtype and device
     mrm_model = mrm_model.to(dtype=torch.bfloat16)
@@ -59,14 +58,14 @@ def convert_qwen3_to_mrm(base_model, mu_pos, mu_neg, sigma_inv):
     print(f"✓ Conversion complete!")
     print(f"  - Model type: {type(mrm_model).__name__}")
     print(f"  - use_gda_reward: {mrm_model.use_gda_reward}")
-    print(f"  - bias: {mrm_model.bias.item():.6f}")
+    print(f"  - ||μ_d||: {np.linalg.norm(mu_d):.4f}")
     
     return mrm_model
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert Qwen3ForSequenceClassification to MRM (GDA-based Reward Model)"
+        description="Convert Qwen3ForSequenceClassification to MRM (difference-based GDA Reward Model)"
     )
     parser.add_argument(
         "--base_model_path", 
@@ -102,11 +101,12 @@ def main():
     )
     print(f"✓ Model loaded from {args.base_model_path}")
     
-    # Step 2: GDA parameters
-    mu_pos, mu_neg, sigma_inv = load_gda_parameters()
-    
+    # Step 2: Load difference-based GDA parameters
+    mu_d, sigma_inv = load_gda_parameters()
+    print(f"✓ GDA parameters loaded  ||μ_d||={np.linalg.norm(mu_d):.4f}")
+
     # Step 3: Convert to MRM and save
-    mrm_model = convert_qwen3_to_mrm(base_model, mu_pos, mu_neg, sigma_inv)
+    mrm_model = convert_qwen3_to_mrm(base_model, mu_d, sigma_inv)
     
     # Save model
     os.makedirs(args.output_path, exist_ok=True)

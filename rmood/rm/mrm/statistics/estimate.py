@@ -294,48 +294,45 @@ def extract_representations(args):
 
 def compute_gda_parameters(chosen_representations, rejected_representations):
     """
-    Compute GDA parameters from the extracted representations.
-    Uses Ledoit-Wolf shrinkage estimator for numerically stable covariance estimation.
-    
+    Difference-based GDA parameter estimation.
+
+    d_i = chosen_i - rejected_i
+    μ_d = E[d_i]
+    Σ_d = Cov(d_i)  via Ledoit-Wolf shrinkage
+
     Args:
-        chosen_representations: numpy array of shape [N, hidden_size]
-        rejected_representations: numpy array of shape [N, hidden_size]
-    
+        chosen_representations:  numpy array [N, hidden_size]
+        rejected_representations: numpy array [N, hidden_size]
+
     Returns:
-        mu_pos, mu_neg, sigma, sigma_inv
+        mu_d:      [hidden_size]
+        sigma:     [hidden_size, hidden_size]
+        sigma_inv: [hidden_size, hidden_size]
     """
     print("\n" + "=" * 80)
-    print("Computing GDA parameters (Ledoit-Wolf shrinkage)...")
+    print("Computing difference-based GDA parameters (Ledoit-Wolf shrinkage)...")
     print("=" * 80)
-    
-    # Compute means
-    mu_pos = chosen_representations.mean(axis=0)  # μ_+
-    mu_neg = rejected_representations.mean(axis=0)  # μ_-
-    
-    print(f"μ_+ (chosen mean) shape: {mu_pos.shape}")
-    print(f"μ_- (rejected mean) shape: {mu_neg.shape}")
-    
-    # Center the data by class means
-    chosen_centered = chosen_representations - mu_pos
-    rejected_centered = rejected_representations - mu_neg
-    
-    # Pool all centered data for within-class covariance estimation
-    all_centered = np.vstack([chosen_centered, rejected_centered])
-    
-    # Ledoit-Wolf shrinkage: Σ_shrunk = (1-α)Σ_sample + α·(tr(Σ)/d)·I
-    # α is automatically estimated from data
-    print(f"Fitting Ledoit-Wolf on {all_centered.shape[0]} samples, {all_centered.shape[1]} dimensions...")
+
+    # d_i = chosen_i - rejected_i
+    D = chosen_representations - rejected_representations  # [N, hidden_size]
+    mu_d = D.mean(axis=0)                                  # [hidden_size]
+
+    print(f"μ_d (mean of d_i) shape: {mu_d.shape}")
+    print(f"||μ_d||: {np.linalg.norm(mu_d):.4f}")
+
+    D_centered = D - mu_d
+    print(f"Fitting Ledoit-Wolf on {D.shape[0]} samples, {D.shape[1]} dimensions...")
     lw = LedoitWolf(assume_centered=True)
-    lw.fit(all_centered)
-    
-    sigma = lw.covariance_
-    sigma_inv = lw.precision_  # = sigma^{-1}, computed with shrinkage
-    
-    print(f"Σ (shrunk covariance) shape: {sigma.shape}")
-    print(f"Σ condition number: {np.linalg.cond(sigma):.2e}")
+    lw.fit(D_centered)
+
+    sigma     = lw.covariance_
+    sigma_inv = lw.precision_
+
+    print(f"Σ_d shape: {sigma.shape}")
+    print(f"Σ_d condition number: {np.linalg.cond(sigma):.2e}")
     print(f"Ledoit-Wolf shrinkage coefficient (α): {lw.shrinkage_:.6f}")
-    
-    return mu_pos, mu_neg, sigma, sigma_inv
+
+    return mu_d, sigma, sigma_inv
 
 
 if __name__ == "__main__":
@@ -374,29 +371,23 @@ if __name__ == "__main__":
     parser.add_argument(
         "--compute_gda",
         action="store_true",
-        help="Also compute and save GDA parameters (mu_pos, mu_neg, sigma, sigma_inv)"
+        help="Compute and save difference-based GDA parameters (mu_d, sigma, sigma_inv)"
     )
     
     args = parser.parse_args()
     
-    # # Extract representations
     chosen_reps, rejected_reps, message_reps = extract_representations(args)
-    # chosen_reps = np.load(f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/chosen_representations.npy")
-    # rejected_reps = np.load(f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/rejected_representations.npy")
     
-    # Optionally compute GDA parameters
     if args.compute_gda:
-        mu_pos, mu_neg, sigma, sigma_inv = compute_gda_parameters(chosen_reps, rejected_reps)
+        mu_d, sigma, sigma_inv = compute_gda_parameters(chosen_reps, rejected_reps)
         
-        # Save GDA parameters
         clean_model_name = args.model_path.replace("/", "--")
         output_dir = os.path.join(args.output_dir, clean_model_name)
         os.makedirs(output_dir, exist_ok=True)
         gda_output_path = os.path.join(output_dir, "gda_parameters.npz")
         np.savez(
             gda_output_path,
-            mu_pos=mu_pos,
-            mu_neg=mu_neg,
+            mu_d=mu_d,
             sigma=sigma,
             sigma_inv=sigma_inv
         )

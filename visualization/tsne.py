@@ -12,8 +12,6 @@ import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 from pathlib import Path
 import argparse
-import torch
-from transformers import AutoModelForSequenceClassification
 from scipy.stats import pearsonr
 
 RMOOD_HOME = os.getenv('RMOOD_HOME')
@@ -121,26 +119,20 @@ def apply_tsne(X, n_components=2, perplexity=30, random_state=42, n_iter=1000):
     return X_tsne
 
 
-def load_score_weight(model_name_or_path):
+def load_score_weight(weight_path):
     """
-    Load the score.weight vector from a reward model
+    Load the score.weight vector from a .npy file
     
     Args:
-        model_name_or_path: HuggingFace model name or local path
+        weight_path: Path to weight .npy file
     
     Returns:
         weight vector as numpy array (shape: [hidden_dim])
     """
-    print(f"\nLoading score.weight from model: {model_name_or_path}")
+    print(f"\nLoading score.weight from: {weight_path}")
     
     try:
-        model = AutoModelForSequenceClassification.from_pretrained(
-            model_name_or_path,
-            torch_dtype=torch.float32
-        )
-        
-        # Get the score weight vector
-        score_weight = model.score.weight.detach().cpu().numpy()
+        score_weight = np.load(weight_path)
         print(f"  Score weight shape: {score_weight.shape}")
         
         # score.weight is typically (1, hidden_dim), so flatten it
@@ -149,7 +141,7 @@ def load_score_weight(model_name_or_path):
         
         return score_weight
     except Exception as e:
-        print(f"  Error loading model: {e}")
+        print(f"  Error loading weight file: {e}")
         return None
 
 
@@ -188,7 +180,7 @@ def project_weight_to_tsne(weight_vector, X_original, X_tsne):
 
 
 def visualize_tsne(X_tsne, y, save_path=None, title="t-SNE Visualization of Chosen vs Rejected", 
-                   figsize=(12, 8), alpha=0.6, s=20, weight_direction=None, projections=None):
+                   figsize=(12, 8), alpha=0.6, s=20, weight_direction=None, projections=None, show_pairs=False):
     """
     Visualize t-SNE results with optional weight vector direction
     
@@ -202,8 +194,26 @@ def visualize_tsne(X_tsne, y, save_path=None, title="t-SNE Visualization of Chos
         s: size of points
         weight_direction: 2D direction vector of score.weight in t-SNE space (optional)
         projections: projection values onto weight vector for coloring (optional)
+        show_pairs: if True, connect chosen-rejected pairs with dotted lines
     """
     plt.figure(figsize=figsize)
+    
+    # Draw pair connections first (so they appear behind points)
+    if show_pairs:
+        n_pairs = np.sum(y == 0)  # Number of chosen samples = number of pairs
+        print(f"\nDrawing connections for {n_pairs} pairs...")
+        for i in range(n_pairs):
+            chosen_idx = i
+            rejected_idx = i + n_pairs
+            plt.plot(
+                [X_tsne[chosen_idx, 0], X_tsne[rejected_idx, 0]],
+                [X_tsne[chosen_idx, 1], X_tsne[rejected_idx, 1]],
+                'gray',
+                linestyle=':',
+                linewidth=0.5,
+                alpha=0.3,
+                zorder=1
+            )
     
     # Plot chosen (class 0)
     chosen_mask = (y == 0)
@@ -214,7 +224,8 @@ def visualize_tsne(X_tsne, y, save_path=None, title="t-SNE Visualization of Chos
         label=f'Chosen (n={np.sum(chosen_mask)})',
         alpha=alpha,
         s=s,
-        edgecolors='none'
+        edgecolors='none',
+        zorder=2
     )
     
     # Plot rejected (class 1)
@@ -226,7 +237,8 @@ def visualize_tsne(X_tsne, y, save_path=None, title="t-SNE Visualization of Chos
         label=f'Rejected (n={np.sum(rejected_mask)})',
         alpha=alpha,
         s=s,
-        edgecolors='none'
+        edgecolors='none',
+        zorder=2
     )
     
     # Plot weight vector direction if provided
@@ -354,10 +366,16 @@ def main():
         help='Center each (chosen, rejected) pair by their mean before t-SNE'
     )
     parser.add_argument(
-        '--model_name',
+        '--show_pairs',
+        action='store_true',
+        default=False,
+        help='Connect chosen-rejected pairs with dotted lines'
+    )
+    parser.add_argument(
+        '--weight_path',
         type=str,
-        default='Hahmdong/RMOOD-qwen3-4b-alpacafarm-rm',
-        help='HuggingFace model name or path to load score.weight from'
+        default=f'{RMOOD_HOME}/datasets/alpacafarm/distribution/Hahmdong_RMOOD-qwen3-4b-alpacafarm-rm/weight.npy',
+        help='Path to score.weight .npy file'
     )
     parser.add_argument(
         '--show_weight_direction',
@@ -385,7 +403,7 @@ def main():
     weight_direction = None
     projections = None
     if args.show_weight_direction:
-        weight_vector = load_score_weight(args.model_name)
+        weight_vector = load_score_weight(args.weight_path)
         if weight_vector is not None and weight_vector.shape[0] == X.shape[1]:
             # We'll compute the direction after t-SNE
             pass
@@ -423,7 +441,8 @@ def main():
         alpha=args.alpha,
         s=args.point_size,
         weight_direction=weight_direction,
-        projections=projections
+        projections=projections,
+        show_pairs=args.show_pairs
     )
     
     print("\n" + "=" * 60)
