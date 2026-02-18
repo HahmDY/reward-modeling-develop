@@ -7,11 +7,11 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 RMOOD_HOME = os.getenv("RMOOD_HOME")
 
 dataset_name = "alpacafarm"
-custom_rm = True
+custom_rm = True # True: custom RM, False: gold RM
 
 if custom_rm:
     model_code = "rm"
-    model_name = f"/root/reward-modeling-develop/models/RMOOD-qwen3-4b-alpacafarm-rm/checkpoint-299"
+    model_name = f"Hahmdong/RMOOD-qwen3-4b-alpacafarm-{model_code}"
 else:
     model_code = "gold"
     model_name = "Skywork/Skywork-Reward-V2-Llama-3.1-8B"
@@ -26,7 +26,7 @@ model = AutoModelForSequenceClassification.from_pretrained(
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 prompts_path = f"{RMOOD_HOME}/datasets/{dataset_name}/test/test_prompts.json"
-responses_path = f"{RMOOD_HOME}/datasets/{dataset_name}/rm/test_sft.json"
+responses_path = f"{RMOOD_HOME}/datasets/{dataset_name}/test/test_sft.json"
 target_path = f"{RMOOD_HOME}/datasets/{dataset_name}/rm/test_reward_{model_code}.json"
 
 with open(prompts_path, "r") as f:

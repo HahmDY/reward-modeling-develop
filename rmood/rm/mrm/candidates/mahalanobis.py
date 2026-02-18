@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Difference-based GDA Reward Pipeline
+Difference-based GDA Reward Pipeline (Quadratic / Mahalanobis)
 
 d_i = chosen_i - rejected_i
 μ_d = mean(d_i)
 Σ_d = cov(d_i)   (Ledoit-Wolf shrinkage)
 
-r(x, y) = 2 * μ_d^T Σ_d^{-1} f_θ(x, y)
+r(x, y) = -1/2 (f_θ(x,y) - μ_d)^T Σ_d^{-1} (f_θ(x,y) - μ_d)
 
 This script:
 1. Computes d_i = chosen_i - rejected_i
@@ -26,26 +26,20 @@ RMOOD_HOME = os.getenv("RMOOD_HOME")
 
 def compute_gda_reward(f, mu_d, sigma_inv):
     """
-    Compute GDA reward: r = 2 * μ_d^T Σ^{-1} f
+    Compute quadratic GDA reward (negative Mahalanobis distance):
+        r = -1/2 (f - μ_d)^T Σ_d^{-1} (f - μ_d)
 
     Args:
         f:         (N, D) representations
         mu_d:      (D,)
-        sigma_inv: (D, D) Σ^{-1}
+        sigma_inv: (D, D) Σ_d^{-1}
 
     Returns:
         rewards: (N,)
-        w:       (D,) reward weight vector
     """
-    beta = 0.001
-    
-    w = 2.0 * sigma_inv @ mu_d  # (D,)
-    odds_rewards = f @ w              # (N,)
-    
     diff = f - mu_d                          # (N, D)
-    mahalanobis_rewards = -0.5 * np.sum(diff @ sigma_inv * diff, axis=1)  # (N,)
-    rewards = odds_rewards + beta * mahalanobis_rewards
-    return rewards, w
+    rewards = -0.5 * np.sum(diff @ sigma_inv * diff, axis=1)  # (N,)
+    return rewards
 
 
 def estimate_difference_params(D):
@@ -77,7 +71,7 @@ def estimate_difference_params(D):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Difference-based GDA reward pipeline"
+        description="Difference-based GDA reward pipeline (Quadratic / Mahalanobis)"
     )
     parser.add_argument(
         "--chosen_path", type=str,
@@ -123,13 +117,14 @@ def main():
 
     # ------------------------------------------------------------------ #
     # 4. Compute GDA rewards
+    #    r(x,y) = -1/2 (f - μ_d)^T Σ_d^{-1} (f - μ_d)
     # ------------------------------------------------------------------ #
-    print("\nComputing GDA rewards: r = 2 * μ_d^T Σ_d^{-1} f ...")
-    chosen_rewards,   w = compute_gda_reward(chosen,   mu_d, sigma_inv)
-    rejected_rewards, _ = compute_gda_reward(rejected, mu_d, sigma_inv)
+    print("\nComputing GDA rewards: r = -1/2 (f - μ_d)^T Σ_d^{-1} (f - μ_d) ...")
+    chosen_rewards   = compute_gda_reward(chosen,   mu_d, sigma_inv)
+    rejected_rewards = compute_gda_reward(rejected, mu_d, sigma_inv)
 
     # reward on difference vector itself
-    diff_rewards, _ = compute_gda_reward(D, mu_d, sigma_inv)
+    diff_rewards = compute_gda_reward(D, mu_d, sigma_inv)
 
     # ------------------------------------------------------------------ #
     # 5. Statistics
@@ -138,14 +133,14 @@ def main():
     margin = chosen_rewards - rejected_rewards  # (N,)
 
     print("\n" + "=" * 60)
-    print("GDA Reward Statistics")
+    print("GDA Reward Statistics (Quadratic / Mahalanobis)")
     print("=" * 60)
     print(f"  Chosen   reward: mean={chosen_rewards.mean():.4f},  std={chosen_rewards.std():.4f}")
     print(f"  Rejected reward: mean={rejected_rewards.mean():.4f},  std={rejected_rewards.std():.4f}")
     print(f"  Margin (chosen - rejected): mean={margin.mean():.4f}, std={margin.std():.4f}")
     print(f"  Accuracy (chosen > rejected): {acc:.4f} ({acc*100:.1f}%)")
-    print(f"\n  r(d_i) = 2 μ_d^T Σ_d^{{-1}} d_i")
-    print(f"  r(d_i) mean: {diff_rewards.mean():.4f}  (>0 means model discriminates correctly)")
+    print(f"\n  r(d_i) = -1/2 (d_i - μ_d)^T Σ_d^{{-1}} (d_i - μ_d)")
+    print(f"  r(d_i) mean: {diff_rewards.mean():.4f}")
 
     # ------------------------------------------------------------------ #
     # 6. Visualization
@@ -161,7 +156,7 @@ def main():
             label=f"Rejected (μ={rejected_rewards.mean():.3f})")
     ax.axvline(chosen_rewards.mean(),   color="blue", linestyle="--", linewidth=2)
     ax.axvline(rejected_rewards.mean(), color="red",  linestyle="--", linewidth=2)
-    ax.set_xlabel("GDA Reward  r = 2μ_d^T Σ⁻¹ f", fontsize=11)
+    ax.set_xlabel("GDA Reward  r = -½(f−μ_d)ᵀΣ⁻¹(f−μ_d)", fontsize=11)
     ax.set_ylabel("Frequency")
     ax.set_title("Reward Distribution", fontweight="bold")
     ax.legend()
@@ -179,19 +174,19 @@ def main():
     ax.legend()
     ax.grid(alpha=0.3)
 
-    # (c) r(d_i) = 2 μ_d^T Σ^{-1} d_i distribution
+    # (c) r(d_i) distribution
     ax = axes[2]
     ax.hist(diff_rewards, bins=bins, color="green", alpha=0.7,
             label=f"μ={diff_rewards.mean():.3f}")
     ax.axvline(0,                  color="black", linestyle="-",  linewidth=1.5)
     ax.axvline(diff_rewards.mean(), color="green", linestyle="--", linewidth=2)
-    ax.set_xlabel("r(d_i) = 2μ_d^T Σ⁻¹ (chosen−rejected)", fontsize=11)
+    ax.set_xlabel("r(d_i) = -½(d_i−μ_d)ᵀΣ⁻¹(d_i−μ_d)", fontsize=11)
     ax.set_ylabel("Frequency")
     ax.set_title("Reward on Difference Vector", fontweight="bold")
     ax.legend()
     ax.grid(alpha=0.3)
 
-    plt.suptitle("Difference-based GDA Reward Analysis", fontsize=14, fontweight="bold")
+    plt.suptitle("Difference-based GDA Reward Analysis (Quadratic)", fontsize=14, fontweight="bold")
     plt.tight_layout()
     plt.savefig(args.output, dpi=300, bbox_inches="tight")
     print(f"\nFigure saved to: {args.output}")

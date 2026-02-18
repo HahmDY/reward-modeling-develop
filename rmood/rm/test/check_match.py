@@ -3,11 +3,11 @@ import json
 
 RMOOD_HOME = os.getenv("RMOOD_HOME")
 
-model_code = "rm"
+model_code = "mrm"
 dataset_name = "alpacafarm"
 
 # filtering test_sft.json to only include items with different responses
-test_sft_path = f"{RMOOD_HOME}/datasets/{dataset_name}/rm/test_sft.json"
+test_sft_path = f"{RMOOD_HOME}/datasets/{dataset_name}/test/test_sft.json"
 with open(test_sft_path, "r") as f:
     test_sft = json.load(f)
 
