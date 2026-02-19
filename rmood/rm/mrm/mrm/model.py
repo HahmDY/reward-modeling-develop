@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Optional
+import numpy as np
 
 import torch
 from torch import nn
@@ -22,26 +23,53 @@ class MRM(Qwen3PreTrainedModel):
         # R(x,y) = 2 * mu_d^T Sigma_d^{-1} f_theta(x,y)
         # where mu_d = E[chosen - rejected], Sigma_d = Cov(chosen - rejected)
         hidden_size = config.hidden_size
+        
+        self.register_buffer('mu_chosen', torch.zeros(hidden_size))   # E[chosen_i]
+        self.register_buffer('mu_rejected', torch.zeros(hidden_size))   # E[rejected_i]
         self.register_buffer('mu_d', torch.zeros(hidden_size))   # E[d_i]
-        self.register_buffer('sigma_inv', torch.eye(hidden_size))  # Σ_d^{-1}
+        self.register_buffer('sigma_chosen', torch.eye(hidden_size))   # Σ_chosen
+        self.register_buffer('sigma_chosen_inv', torch.eye(hidden_size))   # Σ_chosen^{-1}
+        self.register_buffer('sigma_rejected', torch.eye(hidden_size))   # Σ_rejected
+        self.register_buffer('sigma_rejected_inv', torch.eye(hidden_size))   # Σ_rejected^{-1}
+        self.register_buffer('sigma_d', torch.eye(hidden_size))   # Σ_d
+        self.register_buffer('sigma_d_inv', torch.eye(hidden_size))   # Σ_d^{-1}
+        
         self.use_gda_reward = True
+        self.const_odds = 1.0
+        self.const_mahalanobis = 0.001
 
         # Initialize weights and apply final processing
         self.post_init()
     
-    def set_gda_params(self, mu_d, sigma_inv):
+    def set_gda_params(self, mu_chosen, mu_rejected, mu_d, sigma_chosen, sigma_chosen_inv, sigma_rejected, sigma_rejected_inv, sigma_d, sigma_d_inv):
         """
         Set difference-based GDA parameters.
 
         Args:
             mu_d:      mean of difference vectors E[chosen - rejected]  (shape: [hidden_size])
-            sigma_inv: inverse covariance of difference vectors Σ_d^{-1} (shape: [hidden_size, hidden_size])
+            sigma_chosen: covariance of chosen vectors Σ_chosen (shape: [hidden_size, hidden_size])
+            sigma_chosen_inv: inverse covariance of chosen vectors Σ_chosen^{-1} (shape: [hidden_size, hidden_size])
+            sigma_rejected: covariance of rejected vectors Σ_rejected (shape: [hidden_size, hidden_size])
+            sigma_rejected_inv: inverse covariance of rejected vectors Σ_rejected^{-1} (shape: [hidden_size, hidden_size])
+            sigma_d: covariance of difference vectors Σ_d (shape: [hidden_size, hidden_size])
+            sigma_d_inv: inverse covariance of difference vectors Σ_d^{-1} (shape: [hidden_size, hidden_size])
         """
-        device = self.mu_d.device
+        device = self.mu_chosen.device
         dtype = self.mu_d.dtype
 
+        self.mu_chosen.copy_(torch.tensor(mu_chosen, dtype=dtype, device=device))
+        self.mu_rejected.copy_(torch.tensor(mu_rejected, dtype=dtype, device=device))
         self.mu_d.copy_(torch.tensor(mu_d, dtype=dtype, device=device))
-        self.sigma_inv.copy_(torch.tensor(sigma_inv, dtype=dtype, device=device))
+        
+        self.sigma_chosen.copy_(torch.tensor(sigma_chosen, dtype=dtype, device=device))
+        self.sigma_chosen_inv.copy_(torch.tensor(sigma_chosen_inv, dtype=dtype, device=device))
+        
+        self.sigma_rejected.copy_(torch.tensor(sigma_rejected, dtype=dtype, device=device))
+        self.sigma_rejected_inv.copy_(torch.tensor(sigma_rejected_inv, dtype=dtype, device=device))
+        
+        self.sigma_d.copy_(torch.tensor(sigma_d, dtype=dtype, device=device))
+        self.sigma_d_inv.copy_(torch.tensor(sigma_d_inv, dtype=dtype, device=device))
+        
         self.use_gda_reward = True
     
     def compute_gda_reward(self, features):
@@ -56,12 +84,26 @@ class MRM(Qwen3PreTrainedModel):
             rewards: (shape: [batch_size])
         """
         device = features.device
-        mu_d      = self.mu_d.to(device)
-        sigma_inv = self.sigma_inv.to(device)
+        mu_chosen = self.mu_chosen.to(device)
+        mu_rejected = self.mu_rejected.to(device)
+        mu_d = self.mu_d.to(device)
+        sigma_chosen = self.sigma_chosen.to(device)
+        sigma_chosen_inv = self.sigma_chosen_inv.to(device)
+        sigma_rejected = self.sigma_rejected.to(device)
+        sigma_rejected_inv = self.sigma_rejected_inv.to(device)
+        sigma_d = self.sigma_d.to(device)
+        sigma_d_inv = self.sigma_d_inv.to(device)
 
-        # w = 2 * Σ_d^{-1} μ_d
-        weight = 2.0 * sigma_inv @ mu_d  # [hidden_size]
-        rewards = features @ weight       # [batch_size]
+        # Odds reward: r = 2 * Σ_d^{-1} μ_d
+        odds_reward = 2.0 * sigma_d_inv @ mu_d  # [hidden_size]
+        odds_rewards = features @ odds_reward       # [batch_size]
+
+        # Mahalanobis reward: r = - 0.5 * (f - μ_chosen)^T Σ_chosen^{-1} (f - μ_chosen) + 0.5 * (f - μ_rejected)^T Σ_rejected^{-1} (f - μ_rejected)
+        diff_chosen = features - mu_chosen  # [batch_size, hidden_size]
+        diff_rejected = features - mu_rejected  # [batch_size, hidden_size]
+        mahalanobis_reward = -0.5 * np.sum(diff_chosen @ sigma_chosen_inv * diff_chosen, axis=1) + 0.5 * np.sum(diff_rejected @ sigma_rejected_inv * diff_rejected, axis=1)  # [batch_size]
+        
+        rewards = self.const_odds * odds_rewards + self.const_mahalanobis * mahalanobis_reward
 
         return rewards
 
