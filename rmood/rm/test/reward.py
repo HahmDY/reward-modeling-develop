@@ -10,7 +10,7 @@ dataset_name = "alpacafarm"
 custom_rm = True # True: custom RM, False: gold RM
 
 if custom_rm:
-    model_code = "rm"
+    model_code = "mrm-sft-based"
     model_name = f"Hahmdong/RMOOD-qwen3-4b-alpacafarm-{model_code}"
 else:
     model_code = "gold"
@@ -21,7 +21,8 @@ model = AutoModelForSequenceClassification.from_pretrained(
     device_map="auto",
     num_labels=1,
     torch_dtype=torch.bfloat16,
-    trust_remote_code=True
+    trust_remote_code=True,
+    ignore_mismatched_sizes=True
 ).eval()
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 

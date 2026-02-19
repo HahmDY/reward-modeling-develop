@@ -27,7 +27,7 @@ def parse_args():
                        help="Type of reward model. [rm, rrm, inform]")
     parser.add_argument("--learning_rate", type=float, default=5e-5,
                        help="Learning rate for the reward model")
-    parser.add_argument("--center_rewards_coefficient", type=float, default=0,
+    parser.add_argument("--center_rewards_coefficient", type=float, default=0.0,
                        help="Coefficient for the center rewards. 0 means no center rewards.")
     return parser.parse_args()
 

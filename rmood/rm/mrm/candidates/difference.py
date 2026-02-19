@@ -45,6 +45,7 @@ def compute_gda_reward(f, mu_d, sigma_inv):
     diff = f - mu_d                          # (N, D)
     mahalanobis_rewards = -0.5 * np.sum(diff @ sigma_inv * diff, axis=1)  # (N,)
     rewards = odds_rewards + beta * mahalanobis_rewards
+    
     return rewards, w
 
 
@@ -81,11 +82,11 @@ def main():
     )
     parser.add_argument(
         "--chosen_path", type=str,
-        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/chosen_representations.npy"
+        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-rm/chosen_representations.npy"
     )
     parser.add_argument(
         "--rejected_path", type=str,
-        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/rejected_representations.npy"
+        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-rm/rejected_representations.npy"
     )
     parser.add_argument("--sample_size", type=int, default=None)
     parser.add_argument("--output", type=str, default="difference_reward.png")

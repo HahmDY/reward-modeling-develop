@@ -430,9 +430,10 @@ if __name__ == "__main__":
 
     if args.compute_gda:
         mu_d, sigma, sigma_inv = compute_gda_parameters(chosen_reps, rejected_reps)
-
-        os.makedirs(args.output_dir, exist_ok=True)
-        gda_output_path = os.path.join(args.output_dir, "gda_parameters.npz")
+        
+        parameters_dir = os.path.join(args.output_dir, model_name_clean)
+        os.makedirs(parameters_dir, exist_ok=True)
+        gda_output_path = os.path.join(parameters_dir, "gda_parameters.npz")
         np.savez(
             gda_output_path,
             mu_d=mu_d,

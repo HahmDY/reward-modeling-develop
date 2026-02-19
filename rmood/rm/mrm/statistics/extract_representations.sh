@@ -42,14 +42,14 @@ if [ "$1" = "--load" ]; then
         --compute_gda
 else
     # ── Mode 1: extract representations from model ─────────────────────
-    MODEL_PATH="${1:-Hahmdong/RMOOD-qwen3-4b-alpacafarm-rm}"
+    MODEL_PATH="${1:-Hahmdong/RMOOD-qwen3-4b-alpacafarm-sft}"
     DATA_PATH="${2:-$RMOOD_HOME/datasets/alpacafarm/rm/rm_implicit.jsonl}"
     OUTPUT_DIR="${3:-$REPR_DIR}"
     BATCH_SIZE="${4:-16}"
     MAX_LENGTH="${5:-2048}"
 
     echo "=================================================="
-    echo "Extract Representations from MRM Model"
+    echo "Extract Representations from reward model"
     echo "=================================================="
     echo "Model Path: $MODEL_PATH"
     echo "Data Path:  $DATA_PATH"

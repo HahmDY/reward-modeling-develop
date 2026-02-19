@@ -8,9 +8,9 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 RMOOD_HOME="${RMOOD_HOME:-$(cd $SCRIPT_DIR/../../.. && pwd)}"
 
 # Default values
-BASE_MODEL_PATH="${1:-Hahmdong/RMOOD-qwen3-4b-alpacafarm-rm}"
-OUTPUT_PATH="${2:-$RMOOD_HOME/models/RMOOD-qwen3-4b-alpacafarm-mrm}"
-PUSH_TO_HUB="${3:-Hahmdong/RMOOD-qwen3-4b-alpacafarm-mrm}"
+BASE_MODEL_PATH="${1:-Hahmdong/RMOOD-qwen3-4b-alpacafarm-sft}"
+OUTPUT_PATH="${2:-$RMOOD_HOME/models/RMOOD-qwen3-4b-alpacafarm-mrm-sft-based}"
+PUSH_TO_HUB="${3:-Hahmdong/RMOOD-qwen3-4b-alpacafarm-mrm-sft-based}"
 
 echo "=================================================="
 echo "Convert Qwen3ForSequenceClassification to MRM"

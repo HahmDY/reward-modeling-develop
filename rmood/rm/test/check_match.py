@@ -3,7 +3,7 @@ import json
 
 RMOOD_HOME = os.getenv("RMOOD_HOME")
 
-model_code = "mrm"
+model_code = "mrm-sft-based"
 dataset_name = "alpacafarm"
 
 # filtering test_sft.json to only include items with different responses

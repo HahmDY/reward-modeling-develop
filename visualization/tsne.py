@@ -301,13 +301,13 @@ def main():
     parser.add_argument(
         '--chosen_path',
         type=str,
-        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/chosen_representations.npy',
+        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-rm-center/chosen_representations.npy',
         help='Path to chosen representations .npy file'
     )
     parser.add_argument(
         '--rejected_path',
         type=str,
-        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/rejected_representations.npy',
+        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-rm-center/rejected_representations.npy',
         help='Path to rejected representations .npy file'
     )
     parser.add_argument(
@@ -319,7 +319,7 @@ def main():
     parser.add_argument(
         '--sample_size',
         type=int,
-        default=30,
+        default=None,
         help='Number of samples to use from each class (default: 5000)'
     )
     parser.add_argument(
@@ -374,7 +374,7 @@ def main():
     parser.add_argument(
         '--weight_path',
         type=str,
-        default=f'{RMOOD_HOME}/datasets/alpacafarm/distribution/Hahmdong_RMOOD-qwen3-4b-alpacafarm-rm/weight.npy',
+        default=f'{RMOOD_HOME}/datasets/alpacafarm/distribution/Hahmdong_RMOOD-qwen3-4b-alpacafarm-rm-center/weight.npy',
         help='Path to score.weight .npy file'
     )
     parser.add_argument(

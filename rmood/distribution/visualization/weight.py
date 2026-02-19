@@ -70,7 +70,7 @@ def extract_score_weight(model_name):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract final score weight from reward model")
     parser.add_argument("--model_name", type=str,
-                        default="Hahmdong/RMOOD-qwen3-4b-alpacafarm-rm",
+                        default="Hahmdong/RMOOD-qwen3-4b-alpacafarm-rm-center",
                         help="Reward model name (e.g., Hahmdong/RMOOD-qwen3-4b-alpacafarm-rm)")
     args = parser.parse_args()
     

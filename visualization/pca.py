@@ -493,13 +493,13 @@ def main():
     parser.add_argument(
         '--chosen_path',
         type=str,
-        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/chosen_representations.npy',
+        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-sft/chosen_representations.npy',
         help='Path to chosen representations .npy file'
     )
     parser.add_argument(
         '--rejected_path',
         type=str,
-        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/rejected_representations.npy',
+        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-sft/rejected_representations.npy',
         help='Path to rejected representations .npy file'
     )
     parser.add_argument(
@@ -548,7 +548,7 @@ def main():
     parser.add_argument(
         '--center_mode',
         type=str,
-        default='regression',
+        default='pair',
         choices=['pair', 'prompt_subtract', 'w_projection', 'residualize', 'regression', 'none'],
         help='Centering mode: "pair" for pair-wise mean, "prompt_subtract" for f(x,y)-f(x), "w_projection" for reward histogram, "residualize" for SVD subspace removal, "regression" for input-adaptive prompt regression, "none" for no centering'
     )
@@ -573,7 +573,7 @@ def main():
     parser.add_argument(
         '--weight_path',
         type=str,
-        default=f'{RMOOD_HOME}/datasets/alpacafarm/distribution/Hahmdong_RMOOD-qwen3-4b-alpacafarm-rm/weight.npy',
+        default=f'{RMOOD_HOME}/datasets/alpacafarm/distribution/Hahmdong_RMOOD-qwen3-4b-alpacafarm-rm-center/weight.npy',
         help='Path to score.weight .npy file'
     )
     parser.add_argument(

@@ -10,8 +10,8 @@ from rmood.rm.mrm.mrm.model import MRM
 RMOOD_HOME = os.getenv("RMOOD_HOME")
 
 
-def load_gda_parameters():
-    parameters_path = f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/gda_parameters.npz"
+def load_gda_parameters(clean_name):
+    parameters_path = f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/{clean_name}/gda_parameters.npz"
     with np.load(parameters_path) as data:
         mu_d      = data["mu_d"]
         sigma_inv = data["sigma_inv"]
@@ -34,12 +34,13 @@ def convert_qwen3_to_mrm(base_model, mu_d, sigma_inv):
     
     # 1. Create MRM model with same config
     print(f"Creating MRM model with same config...")
+    base_model.config.num_labels = 1
     mrm_model = MRM(base_model.config)
     
-    # 2. Copy weights from base model
+    # 2. Copy weights from base model (score layer is not copied since MRM
+    #    uses compute_gda_reward for final output when use_gda_reward=True)
     print(f"Copying weights from base model...")
     mrm_model.model.load_state_dict(base_model.model.state_dict())
-    mrm_model.score.load_state_dict(base_model.score.state_dict())
     
     # 3. Set difference-based GDA parameters
     print(f"Setting GDA parameters...")
@@ -102,7 +103,8 @@ def main():
     print(f"✓ Model loaded from {args.base_model_path}")
     
     # Step 2: Load difference-based GDA parameters
-    mu_d, sigma_inv = load_gda_parameters()
+    clean_name = args.base_model_path.replace("/", "--")
+    mu_d, sigma_inv = load_gda_parameters(clean_name)
     print(f"✓ GDA parameters loaded  ||μ_d||={np.linalg.norm(mu_d):.4f}")
 
     # Step 3: Convert to MRM and save
