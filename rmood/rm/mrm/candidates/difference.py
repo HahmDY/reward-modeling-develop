@@ -24,32 +24,38 @@ from sklearn.covariance import LedoitWolf
 RMOOD_HOME = os.getenv("RMOOD_HOME")
 
 
-def compute_gda_reward(f, mu_d, sigma_inv):
+def compute_gda_reward(f, mu_d, sigma_d_inv, mu_chosen, sigma_chosen_inv, mu_rejected, sigma_rejected_inv):
     """
     Compute GDA reward: r = 2 * μ_d^T Σ^{-1} f
 
     Args:
         f:         (N, D) representations
         mu_d:      (D,)
-        sigma_inv: (D, D) Σ^{-1}
+        sigma_d_inv: (D, D) Σ_d^{-1}
+        mu_chosen: (D,)
+        sigma_chosen_inv: (D, D) Σ_chosen^{-1}
 
     Returns:
         rewards: (N,)
         w:       (D,) reward weight vector
     """
-    beta = 0.001
+    odds_const = 0.0
+    mahalanobis_const = 1.0
     
-    w = 2.0 * sigma_inv @ mu_d  # (D,)
+    w = 2.0 * sigma_d_inv @ mu_d  # (D,)
     odds_rewards = f @ w              # (N,)
     
-    diff = f - mu_d                          # (N, D)
-    mahalanobis_rewards = -0.5 * np.sum(diff @ sigma_inv * diff, axis=1)  # (N,)
-    rewards = odds_rewards + beta * mahalanobis_rewards
+    diff_chosen = f - mu_chosen  # (N, D)
+    diff_rejected = f - mu_rejected  # (N, D)
+    mahalanobis_chosen = -0.5 * np.sum(diff_chosen @ sigma_chosen_inv * diff_chosen, axis=1)  # (N,)
+    mahalanobis_rejected = -0.5 * np.sum(diff_rejected @ sigma_rejected_inv * diff_rejected, axis=1)  # (N,)
+    mahalanobis_rewards = mahalanobis_chosen - mahalanobis_rejected
+    rewards = odds_const * odds_rewards + mahalanobis_const * mahalanobis_rewards
     
     return rewards, w
 
 
-def estimate_difference_params(D):
+def estimate_params(chosen, rejected):
     """
     Estimate μ_d and Σ_d^{-1} from difference vectors d_i = chosen_i - rejected_i.
 
@@ -61,19 +67,38 @@ def estimate_difference_params(D):
         sigma_inv: (D, D) Σ_d^{-1} via Ledoit-Wolf
     """
     print("\nEstimating μ_d and Σ_d from difference vectors...")
+    D = chosen - rejected
+    
+    mu_chosen = chosen.mean(axis=0)
+    mu_rejected = rejected.mean(axis=0)
     mu_d = D.mean(axis=0)  # (D,)
 
     D_centered = D - mu_d
     print(f"  Fitting Ledoit-Wolf on {D.shape[0]} samples, {D.shape[1]} dimensions...")
     lw = LedoitWolf(assume_centered=True)
     lw.fit(D_centered)
-
-    sigma_inv = lw.precision_
+    sigma_d_inv = lw.precision_
     print(f"  ||μ_d||: {np.linalg.norm(mu_d):.4f}")
     print(f"  Σ_d condition number: {np.linalg.cond(lw.covariance_):.2e}")
     print(f"  Ledoit-Wolf shrinkage (α): {lw.shrinkage_:.6f}")
+    
+    chosen_centered = chosen - mu_chosen
+    print(f"  fitting Ledoit-Wolf on {chosen_centered.shape[0]} samples, {chosen_centered.shape[1]} dimensions...")
+    lw.fit(chosen_centered)
+    sigma_chosen_inv = lw.precision_
+    print(f"  ||μ_chosen||: {np.linalg.norm(mu_chosen):.4f}")
+    print(f"  Σ_chosen condition number: {np.linalg.cond(lw.covariance_):.2e}")
+    print(f"  Ledoit-Wolf shrinkage (α): {lw.shrinkage_:.6f}")
+    
+    rejected_centered = rejected - mu_rejected
+    print(f"  fitting Ledoit-Wolf on {rejected_centered.shape[0]} samples, {rejected_centered.shape[1]} dimensions...")
+    lw.fit(rejected_centered)
+    sigma_rejected_inv = lw.precision_
+    print(f"  ||μ_rejected||: {np.linalg.norm(mu_rejected):.4f}")
+    print(f"  Σ_rejected condition number: {np.linalg.cond(lw.covariance_):.2e}")
+    print(f"  Ledoit-Wolf shrinkage (α): {lw.shrinkage_:.6f}")
 
-    return mu_d, sigma_inv
+    return mu_d, mu_chosen, mu_rejected, sigma_d_inv, sigma_chosen_inv, sigma_rejected_inv
 
 
 def main():
@@ -82,11 +107,11 @@ def main():
     )
     parser.add_argument(
         "--chosen_path", type=str,
-        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-rm/chosen_representations.npy"
+        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-rm-center/chosen_representations.npy"
     )
     parser.add_argument(
         "--rejected_path", type=str,
-        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-rm/rejected_representations.npy"
+        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-rm-center/rejected_representations.npy"
     )
     parser.add_argument("--sample_size", type=int, default=None)
     parser.add_argument("--output", type=str, default="difference_reward.png")
@@ -110,27 +135,16 @@ def main():
         print(f"  Sampled {len(chosen)} pairs")
 
     # ------------------------------------------------------------------ #
-    # 2. Compute d_i = chosen_i - rejected_i
+    # 2. Estimate μ_d and Σ_d from D
     # ------------------------------------------------------------------ #
-    D = chosen - rejected  # (N, D)
-    print(f"\nDifference vectors d_i = chosen_i - rejected_i")
-    print(f"  shape: {D.shape}")
-    print(f"  ||d_i|| mean: {np.linalg.norm(D, axis=1).mean():.4f}")
+    mu_d, mu_chosen, mu_rejected, sigma_d_inv, sigma_chosen_inv, sigma_rejected_inv = estimate_params(chosen, rejected)
 
     # ------------------------------------------------------------------ #
-    # 3. Estimate μ_d and Σ_d from D
-    # ------------------------------------------------------------------ #
-    mu_d, sigma_inv = estimate_difference_params(D)
-
-    # ------------------------------------------------------------------ #
-    # 4. Compute GDA rewards
+    # 3. Compute GDA rewards
     # ------------------------------------------------------------------ #
     print("\nComputing GDA rewards: r = 2 * μ_d^T Σ_d^{-1} f ...")
-    chosen_rewards,   w = compute_gda_reward(chosen,   mu_d, sigma_inv)
-    rejected_rewards, _ = compute_gda_reward(rejected, mu_d, sigma_inv)
-
-    # reward on difference vector itself
-    diff_rewards, _ = compute_gda_reward(D, mu_d, sigma_inv)
+    chosen_rewards,   w = compute_gda_reward(chosen, mu_d, sigma_d_inv, mu_chosen, sigma_chosen_inv, mu_rejected, sigma_rejected_inv)
+    rejected_rewards, _ = compute_gda_reward(rejected, mu_d, sigma_d_inv, mu_chosen, sigma_chosen_inv, mu_rejected, sigma_rejected_inv)
 
     # ------------------------------------------------------------------ #
     # 5. Statistics
@@ -145,13 +159,11 @@ def main():
     print(f"  Rejected reward: mean={rejected_rewards.mean():.4f},  std={rejected_rewards.std():.4f}")
     print(f"  Margin (chosen - rejected): mean={margin.mean():.4f}, std={margin.std():.4f}")
     print(f"  Accuracy (chosen > rejected): {acc:.4f} ({acc*100:.1f}%)")
-    print(f"\n  r(d_i) = 2 μ_d^T Σ_d^{{-1}} d_i")
-    print(f"  r(d_i) mean: {diff_rewards.mean():.4f}  (>0 means model discriminates correctly)")
 
     # ------------------------------------------------------------------ #
     # 6. Visualization
     # ------------------------------------------------------------------ #
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
 
     # (a) Reward distribution
     ax = axes[0]
@@ -179,24 +191,6 @@ def main():
     ax.set_title(f"Margin  (acc={acc*100:.1f}%)", fontweight="bold")
     ax.legend()
     ax.grid(alpha=0.3)
-
-    # (c) r(d_i) = 2 μ_d^T Σ^{-1} d_i distribution
-    ax = axes[2]
-    ax.hist(diff_rewards, bins=bins, color="green", alpha=0.7,
-            label=f"μ={diff_rewards.mean():.3f}")
-    ax.axvline(0,                  color="black", linestyle="-",  linewidth=1.5)
-    ax.axvline(diff_rewards.mean(), color="green", linestyle="--", linewidth=2)
-    ax.set_xlabel("r(d_i) = 2μ_d^T Σ⁻¹ (chosen−rejected)", fontsize=11)
-    ax.set_ylabel("Frequency")
-    ax.set_title("Reward on Difference Vector", fontweight="bold")
-    ax.legend()
-    ax.grid(alpha=0.3)
-
-    plt.suptitle("Difference-based GDA Reward Analysis", fontsize=14, fontweight="bold")
-    plt.tight_layout()
-    plt.savefig(args.output, dpi=300, bbox_inches="tight")
-    print(f"\nFigure saved to: {args.output}")
-    plt.show()
 
     print("\n" + "=" * 60)
     print("Done.")

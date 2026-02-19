@@ -13,19 +13,31 @@ RMOOD_HOME = os.getenv("RMOOD_HOME")
 def load_gda_parameters(clean_name):
     parameters_path = f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/{clean_name}/gda_parameters.npz"
     with np.load(parameters_path) as data:
-        mu_d      = data["mu_d"]
-        sigma_inv = data["sigma_inv"]
-    return mu_d, sigma_inv
+        mu_chosen = data["mu_chosen"]
+        mu_rejected = data["mu_rejected"]
+        mu_d = data["mu_d"]
+        sigma_chosen = data["sigma_chosen"]
+        sigma_chosen_inv = data["sigma_chosen_inv"]
+        sigma_rejected = data["sigma_rejected"]
+        sigma_rejected_inv = data["sigma_rejected_inv"]
+        sigma_d = data["sigma_d"]
+        sigma_d_inv = data["sigma_d_inv"]
+    return mu_chosen, mu_rejected, mu_d, sigma_chosen, sigma_chosen_inv, sigma_rejected, sigma_rejected_inv, sigma_d, sigma_d_inv
 
 
-def convert_qwen3_to_mrm(base_model, mu_d, sigma_inv):
+def convert_qwen3_to_mrm(base_model, mu_chosen, mu_rejected, mu_d, sigma_chosen, sigma_chosen_inv, sigma_rejected, sigma_rejected_inv, sigma_d, sigma_d_inv):
     """
     Convert Qwen3ForSequenceClassification model to MRM.
 
     Args:
         base_model: Trained Qwen3ForSequenceClassification model
         mu_d:      mean of difference vectors E[chosen - rejected]  [hidden_size]
-        sigma_inv: Σ_d^{-1} (Ledoit-Wolf)                          [hidden_size, hidden_size]
+        sigma_chosen: Σ_chosen (Ledoit-Wolf)                         [hidden_size, hidden_size]
+        sigma_chosen_inv: Σ_chosen^{-1} (Ledoit-Wolf)               [hidden_size, hidden_size]
+        sigma_rejected: Σ_rejected (Ledoit-Wolf)                     [hidden_size, hidden_size]
+        sigma_rejected_inv: Σ_rejected^{-1} (Ledoit-Wolf)           [hidden_size, hidden_size]
+        sigma_d: Σ_d (Ledoit-Wolf)                                   [hidden_size, hidden_size]
+        sigma_d_inv: Σ_d^{-1} (Ledoit-Wolf)                          [hidden_size, hidden_size]
 
     Returns:
         mrm_model: MRM model
@@ -44,7 +56,7 @@ def convert_qwen3_to_mrm(base_model, mu_d, sigma_inv):
     
     # 3. Set difference-based GDA parameters
     print(f"Setting GDA parameters...")
-    mrm_model.set_gda_params(mu_d, sigma_inv)
+    mrm_model.set_gda_params(mu_chosen, mu_rejected, mu_d, sigma_chosen, sigma_chosen_inv, sigma_rejected, sigma_rejected_inv, sigma_d, sigma_d_inv)
     
     # 4. Match dtype and device
     mrm_model = mrm_model.to(dtype=torch.bfloat16)
@@ -59,7 +71,15 @@ def convert_qwen3_to_mrm(base_model, mu_d, sigma_inv):
     print(f"✓ Conversion complete!")
     print(f"  - Model type: {type(mrm_model).__name__}")
     print(f"  - use_gda_reward: {mrm_model.use_gda_reward}")
+    print(f"  - ||μ_chosen||: {np.linalg.norm(mu_chosen):.4f}")
+    print(f"  - ||μ_rejected||: {np.linalg.norm(mu_rejected):.4f}")
     print(f"  - ||μ_d||: {np.linalg.norm(mu_d):.4f}")
+    print(f"  - ||σ_chosen||: {np.linalg.norm(sigma_chosen):.4f}")
+    print(f"  - ||σ_chosen_inv||: {np.linalg.norm(sigma_chosen_inv):.4f}")
+    print(f"  - ||σ_rejected||: {np.linalg.norm(sigma_rejected):.4f}")
+    print(f"  - ||σ_rejected_inv||: {np.linalg.norm(sigma_rejected_inv):.4f}")
+    print(f"  - ||σ_d||: {np.linalg.norm(sigma_d):.4f}")
+    print(f"  - ||σ_d_inv||: {np.linalg.norm(sigma_d_inv):.4f}")
     
     return mrm_model
 
@@ -104,11 +124,11 @@ def main():
     
     # Step 2: Load difference-based GDA parameters
     clean_name = args.base_model_path.replace("/", "--")
-    mu_d, sigma_inv = load_gda_parameters(clean_name)
+    mu_chosen, mu_rejected, mu_d, sigma_chosen, sigma_chosen_inv, sigma_rejected, sigma_rejected_inv, sigma_d, sigma_d_inv = load_gda_parameters(clean_name)
     print(f"✓ GDA parameters loaded  ||μ_d||={np.linalg.norm(mu_d):.4f}")
 
     # Step 3: Convert to MRM and save
-    mrm_model = convert_qwen3_to_mrm(base_model, mu_d, sigma_inv)
+    mrm_model = convert_qwen3_to_mrm(base_model, mu_chosen, mu_rejected, mu_d, sigma_chosen, sigma_chosen_inv, sigma_rejected, sigma_rejected_inv, sigma_d, sigma_d_inv)
     
     # Save model
     os.makedirs(args.output_path, exist_ok=True)

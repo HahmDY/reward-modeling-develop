@@ -296,9 +296,12 @@ def compute_gda_parameters(chosen_representations, rejected_representations):
     """
     Difference-based GDA parameter estimation.
 
-    d_i = chosen_i - rejected_i
-    μ_d = E[d_i]
-    Σ_d = Cov(d_i)  via Ledoit-Wolf shrinkage
+    μ_chosen = E[chosen_i]
+    μ_rejected = E[rejected_i]
+    μ_d = μ_chosen - μ_rejected
+    Σ_chosen = Cov(chosen_i)  via Ledoit-Wolf shrinkage
+    Σ_rejected = Cov(rejected_i)  via Ledoit-Wolf shrinkage
+    Σ_d = Cov(chosen_i - rejected_i)  via Ledoit-Wolf shrinkage
 
     Args:
         chosen_representations:  numpy array [N, hidden_size]
@@ -312,6 +315,35 @@ def compute_gda_parameters(chosen_representations, rejected_representations):
     print("\n" + "=" * 80)
     print("Computing difference-based GDA parameters (Ledoit-Wolf shrinkage)...")
     print("=" * 80)
+    
+    mu_chosen = chosen_representations.mean(axis=0)
+    mu_rejected = rejected_representations.mean(axis=0)
+    
+    print(f"μ_chosen shape: {mu_chosen.shape}")
+    print(f"||μ_chosen||: {np.linalg.norm(mu_chosen):.4f}")
+    print(f"μ_rejected shape: {mu_rejected.shape}")
+    print(f"||μ_rejected||: {np.linalg.norm(mu_rejected):.4f}")
+    
+    chosen_centered = chosen_representations - mu_chosen
+    rejected_centered = rejected_representations - mu_rejected
+    
+    print(f"Fitting Ledoit-Wolf on {chosen_centered.shape[0]} samples, {chosen_centered.shape[1]} dimensions...")
+    lw = LedoitWolf(assume_centered=True)
+    lw.fit(chosen_centered)
+    sigma_chosen = lw.covariance_
+    sigma_chosen_inv = lw.precision_
+    print(f"||μ_chosen||: {np.linalg.norm(mu_chosen):.4f}")
+    print(f"Σ_chosen condition number: {np.linalg.cond(sigma_chosen):.2e}")
+    print(f"Ledoit-Wolf shrinkage coefficient (α): {lw.shrinkage_:.6f}")
+    
+    print(f"Fitting Ledoit-Wolf on {rejected_centered.shape[0]} samples, {rejected_centered.shape[1]} dimensions...")
+    lw = LedoitWolf(assume_centered=True)
+    lw.fit(rejected_centered)
+    sigma_rejected = lw.covariance_
+    sigma_rejected_inv = lw.precision_
+    print(f"||μ_rejected||: {np.linalg.norm(mu_rejected):.4f}")
+    print(f"Σ_rejected condition number: {np.linalg.cond(sigma_rejected):.2e}")
+    print(f"Ledoit-Wolf shrinkage coefficient (α): {lw.shrinkage_:.6f}")
 
     # d_i = chosen_i - rejected_i
     D = chosen_representations - rejected_representations  # [N, hidden_size]
@@ -325,14 +357,14 @@ def compute_gda_parameters(chosen_representations, rejected_representations):
     lw = LedoitWolf(assume_centered=True)
     lw.fit(D_centered)
 
-    sigma     = lw.covariance_
-    sigma_inv = lw.precision_
+    sigma_d   = lw.covariance_
+    sigma_d_inv = lw.precision_
 
-    print(f"Σ_d shape: {sigma.shape}")
-    print(f"Σ_d condition number: {np.linalg.cond(sigma):.2e}")
+    print(f"Σ_d shape: {sigma_d.shape}")
+    print(f"Σ_d condition number: {np.linalg.cond(sigma_d):.2e}")
     print(f"Ledoit-Wolf shrinkage coefficient (α): {lw.shrinkage_:.6f}")
 
-    return mu_d, sigma, sigma_inv
+    return mu_chosen, mu_rejected, mu_d, sigma_chosen, sigma_chosen_inv, sigma_rejected, sigma_rejected_inv, sigma_d, sigma_d_inv
 
 
 if __name__ == "__main__":
@@ -429,15 +461,21 @@ if __name__ == "__main__":
         chosen_reps, rejected_reps, message_reps = extract_representations(args)
 
     if args.compute_gda:
-        mu_d, sigma, sigma_inv = compute_gda_parameters(chosen_reps, rejected_reps)
+        mu_chosen, mu_rejected, mu_d, sigma_chosen, sigma_chosen_inv, sigma_rejected, sigma_rejected_inv, sigma_d, sigma_d_inv = compute_gda_parameters(chosen_reps, rejected_reps)
         
         parameters_dir = os.path.join(args.output_dir, model_name_clean)
         os.makedirs(parameters_dir, exist_ok=True)
         gda_output_path = os.path.join(parameters_dir, "gda_parameters.npz")
         np.savez(
             gda_output_path,
+            mu_chosen=mu_chosen,
+            mu_rejected=mu_rejected,
             mu_d=mu_d,
-            sigma=sigma,
-            sigma_inv=sigma_inv
+            sigma_chosen=sigma_chosen,
+            sigma_chosen_inv=sigma_chosen_inv,
+            sigma_rejected=sigma_rejected,
+            sigma_rejected_inv=sigma_rejected_inv,
+            sigma_d=sigma_d,
+            sigma_d_inv=sigma_d_inv,
         )
         print(f"\nGDA parameters saved to: {gda_output_path}")
