@@ -20,6 +20,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 from pathlib import Path
+from sklearn.decomposition import PCA
 
 RMOOD_HOME = os.getenv('RMOOD_HOME')
 
@@ -158,6 +159,87 @@ def visualize_dot_product_distribution(dot_products, save_path=None, bins=50, fi
     plt.show()
 
 
+def visualize_centers_pca(centers, dot_products, score_weight, save_path=None, figsize=(14, 6)):
+    """
+    PCA로 center 벡터를 2D로 축소하여 시각화
+    
+    Args:
+        centers: array of pair centers (N, D)
+        dot_products: array of dot products for coloring (N,)
+        score_weight: score.weight vector (D,) — PCA 공간에 투영하여 방향 표시
+        save_path: path to save the figure (optional)
+        figsize: figure size
+    """
+    print("\nRunning PCA on centers...")
+    pca = PCA(n_components=2)
+    centers_2d = pca.fit_transform(centers)
+    explained = pca.explained_variance_ratio_
+    print(f"  Explained variance: PC1={explained[0]:.4f}, PC2={explained[1]:.4f} "
+          f"(total={explained.sum():.4f})")
+
+    # score.weight를 PCA 공간에 투영 (방향 벡터로 사용)
+    weight_2d = pca.transform(score_weight.reshape(1, -1))[0]
+
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+
+    # --- 왼쪽: dot product로 컬러링 ---
+    ax = axes[0]
+    sc = ax.scatter(
+        centers_2d[:, 0], centers_2d[:, 1],
+        c=dot_products, cmap='coolwarm', alpha=0.6, s=10, linewidths=0
+    )
+    cbar = fig.colorbar(sc, ax=ax)
+    cbar.set_label('center · score.weight', fontsize=10)
+
+    # score.weight 방향 화살표 (정규화)
+    arrow_scale = (centers_2d[:, 0].max() - centers_2d[:, 0].min()) * 0.3
+    w_norm = weight_2d / (np.linalg.norm(weight_2d) + 1e-8) * arrow_scale
+    ax.annotate(
+        '', xy=(w_norm[0], w_norm[1]), xytext=(0, 0),
+        arrowprops=dict(arrowstyle='->', color='black', lw=2)
+    )
+    ax.text(w_norm[0] * 1.1, w_norm[1] * 1.1, 'score.weight', fontsize=9, color='black')
+
+    ax.set_xlabel(f'PC1 ({explained[0]*100:.1f}%)', fontsize=11)
+    ax.set_ylabel(f'PC2 ({explained[1]*100:.1f}%)', fontsize=11)
+    ax.set_title('Centers PCA (colored by dot product)', fontsize=13, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+
+    # --- 오른쪽: 밀도 기반 시각화 (단색) ---
+    ax = axes[1]
+    ax.scatter(
+        centers_2d[:, 0], centers_2d[:, 1],
+        alpha=0.3, s=8, color='steelblue', linewidths=0
+    )
+    # 전체 평균 center 표시
+    mean_2d = centers_2d.mean(axis=0)
+    ax.scatter(*mean_2d, color='red', s=80, zorder=5, label=f'Mean center')
+    ax.set_xlabel(f'PC1 ({explained[0]*100:.1f}%)', fontsize=11)
+    ax.set_ylabel(f'PC2 ({explained[1]*100:.1f}%)', fontsize=11)
+    ax.set_title('Centers PCA (density view)', fontsize=13, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    # 통계 텍스트
+    stats_text = (
+        f"n = {len(centers)}\n"
+        f"PC1 var = {explained[0]*100:.2f}%\n"
+        f"PC2 var = {explained[1]*100:.2f}%\n"
+        f"Total var = {explained.sum()*100:.2f}%"
+    )
+    ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
+            fontsize=9, verticalalignment='top', horizontalalignment='right',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"  PCA figure saved to: {save_path}")
+
+    plt.show()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Analyze relationship between pair centers and score.weight'
@@ -165,13 +247,13 @@ def main():
     parser.add_argument(
         '--chosen_path',
         type=str,
-        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/chosen_representations.npy',
+        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-sft/chosen_representations.npy',
         help='Path to chosen representations .npy file'
     )
     parser.add_argument(
         '--rejected_path',
         type=str,
-        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/rejected_representations.npy',
+        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-rm/rejected_representations.npy',
         help='Path to rejected representations .npy file'
     )
     parser.add_argument(
@@ -211,6 +293,17 @@ def main():
         default=[12, 8],
         help='Figure size (width height) (default: 12 8)'
     )
+    parser.add_argument(
+        '--pca_output',
+        type=str,
+        default='center_pca.png',
+        help='Output path for PCA visualization (default: center_pca.png)'
+    )
+    parser.add_argument(
+        '--no_pca',
+        action='store_true',
+        help='Skip PCA visualization'
+    )
     
     args = parser.parse_args()
     
@@ -241,15 +334,26 @@ def main():
         chosen, rejected, score_weight, sample_size=args.sample_size
     )
     
-    # Visualize
-    print("\nCreating visualization...")
+    # Visualize dot product distribution
+    print("\nCreating dot product distribution visualization...")
     visualize_dot_product_distribution(
         dot_products,
         save_path=args.output,
         bins=args.bins,
         figsize=tuple(args.figsize)
     )
-    
+
+    # PCA visualization of centers
+    if not args.no_pca:
+        print("\nCreating PCA visualization of centers...")
+        visualize_centers_pca(
+            centers,
+            dot_products,
+            score_weight,
+            save_path=args.pca_output,
+            figsize=(14, 6)
+        )
+
     print("\n" + "=" * 80)
     print("Analysis completed!")
     print("=" * 80)

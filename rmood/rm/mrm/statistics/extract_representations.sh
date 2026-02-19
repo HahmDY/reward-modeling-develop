@@ -18,31 +18,25 @@ REPR_DIR="$RMOOD_HOME/datasets/alpacafarm/rm/representations"
 
 if [ "$1" = "--load" ]; then
     # ── Mode 2: load pre-existing representations ──────────────────────
-    CHOSEN_PATH="${2:-$REPR_DIR/chosen_representations.npy}"
-    REJECTED_PATH="${3:-$REPR_DIR/rejected_representations.npy}"
-    MESSAGE_PATH="${4:-$REPR_DIR/message_representations.npy}"
-    OUTPUT_DIR="${5:-$REPR_DIR}"
+    MODEL_PATH="${2:-Hahmdong--RMOOD-qwen3-4b-alpacafarm-rm}"
+    OUTPUT_DIR="${3:-$REPR_DIR}"
 
     echo "=================================================="
     echo "Compute GDA Parameters from existing representations"
     echo "=================================================="
-    echo "Chosen:   $CHOSEN_PATH"
-    echo "Rejected: $REJECTED_PATH"
-    echo "Message:  $MESSAGE_PATH"
+    echo "Model Path: $MODEL_PATH"
     echo "Output:   $OUTPUT_DIR"
     echo "=================================================="
     echo ""
 
     python -m rmood.rm.mrm.statistics.estimate \
+        --model_path "$MODEL_PATH" \
         --load_representations \
-        --chosen_path "$CHOSEN_PATH" \
-        --rejected_path "$REJECTED_PATH" \
-        --message_path "$MESSAGE_PATH" \
         --output_dir "$OUTPUT_DIR" \
         --compute_gda
 else
     # ── Mode 1: extract representations from model ─────────────────────
-    MODEL_PATH="${1:-Hahmdong/RMOOD-qwen3-4b-alpacafarm-sft}"
+    MODEL_PATH="${1:-Hahmdong/RMOOD-qwen3-4b-alpacafarm-rm}"
     DATA_PATH="${2:-$RMOOD_HOME/datasets/alpacafarm/rm/rm_implicit.jsonl}"
     OUTPUT_DIR="${3:-$REPR_DIR}"
     BATCH_SIZE="${4:-16}"

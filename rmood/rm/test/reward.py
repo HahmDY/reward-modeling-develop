@@ -26,6 +26,10 @@ model = AutoModelForSequenceClassification.from_pretrained(
 ).eval()
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
+# set reward parameters
+model.const_odds = 0
+model.const_mahalanobis = 1.0
+
 prompts_path = f"{RMOOD_HOME}/datasets/{dataset_name}/test/test_prompts.json"
 responses_path = f"{RMOOD_HOME}/datasets/{dataset_name}/test/test_sft.json"
 target_path = f"{RMOOD_HOME}/datasets/{dataset_name}/rm/test_reward_{model_code}.json"

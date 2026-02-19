@@ -74,14 +74,11 @@ class MRM(Qwen3PreTrainedModel):
     
     def compute_gda_reward(self, features):
         """
-        Difference-based GDA reward:
-        R(x,y) = 2 * mu_d^T Sigma_d^{-1} f_theta(x,y)
+        Difference-based Odds reward:
+        R(x,y) = 2 * Σ_d^{-1} μ_d
         
-        Args:
-            features: hidden representation (shape: [batch_size, hidden_size])
-        
-        Returns:
-            rewards: (shape: [batch_size])
+        Mahalanobis reward:
+        R(x,y) = - 0.5 * (f - μ_chosen)^T Σ_chosen^{-1} (f - μ_chosen) + 0.5 * (f - μ_rejected)^T Σ_rejected^{-1} (f - μ_rejected)
         """
         device = features.device
         mu_chosen = self.mu_chosen.to(device)
@@ -103,7 +100,9 @@ class MRM(Qwen3PreTrainedModel):
         # Mahalanobis reward: r = - 0.5 * (f - μ_chosen)^T Σ_chosen^{-1} (f - μ_chosen) + 0.5 * (f - μ_rejected)^T Σ_rejected^{-1} (f - μ_rejected)
         diff_chosen = features - mu_chosen  # [batch_size, hidden_size]
         diff_rejected = features - mu_rejected  # [batch_size, hidden_size]
-        mahalanobis_reward = -0.5 * np.sum(diff_chosen @ sigma_chosen_inv * diff_chosen, axis=1) + 0.5 * np.sum(diff_rejected @ sigma_rejected_inv * diff_rejected, axis=1)  # [batch_size]
+        mahalanobis_reward_chosen = -0.5 * (diff_chosen @ sigma_chosen_inv * diff_chosen).sum(dim=1)  # [batch_size]
+        mahalanobis_reward_rejected = -0.5 * (diff_rejected @ sigma_rejected_inv * diff_rejected).sum(dim=1)  # [batch_size]
+        mahalanobis_reward = mahalanobis_reward_chosen - mahalanobis_reward_rejected
         
         rewards = self.const_odds * odds_rewards + self.const_mahalanobis * mahalanobis_reward
 
