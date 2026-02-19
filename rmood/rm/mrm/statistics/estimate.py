@@ -336,13 +336,13 @@ def compute_gda_parameters(chosen_representations, rejected_representations):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Extract representations from MRM model")
+    parser = argparse.ArgumentParser(description="Extract representations from reward model")
     
     parser.add_argument(
         "--model_path",
         type=str,
         default=None,
-        help="Path to the trained MRM model (not required if --load_representations is set)"
+        help="Path to the trained reward model to extract representations (not required if --load_representations is set)"
     )
     parser.add_argument(
         "--data_path",
@@ -382,23 +382,36 @@ if __name__ == "__main__":
     parser.add_argument(
         "--chosen_path",
         type=str,
-        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/chosen_representations.npy",
+        default=None,
         help="Path to pre-extracted chosen representations (used with --load_representations)"
     )
     parser.add_argument(
         "--rejected_path",
         type=str,
-        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/rejected_representations.npy",
+        default=None,
         help="Path to pre-extracted rejected representations (used with --load_representations)"
     )
     parser.add_argument(
         "--message_path",
         type=str,
-        default=f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations/message_representations.npy",
+        default=None,
         help="Path to pre-extracted message-only representations (used with --load_representations)"
     )
 
     args = parser.parse_args()
+
+    if args.model_path is not None:
+        model_name_clean = args.model_path.replace("/", "--")
+    else:
+        model_name_clean = ""
+
+    repr_dir = f"{RMOOD_HOME}/datasets/alpacafarm/rm/representations"
+    if args.chosen_path is None:
+        args.chosen_path = f"{repr_dir}/{model_name_clean}/chosen_representations.npy"
+    if args.rejected_path is None:
+        args.rejected_path = f"{repr_dir}/{model_name_clean}/rejected_representations.npy"
+    if args.message_path is None:
+        args.message_path = f"{repr_dir}/{model_name_clean}/message_representations.npy"
 
     if args.load_representations:
         print("=" * 80)
