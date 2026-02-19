@@ -27,6 +27,8 @@ def parse_args():
                        help="Type of reward model. [rm, rrm, inform]")
     parser.add_argument("--learning_rate", type=float, default=5e-5,
                        help="Learning rate for the reward model")
+    parser.add_argument("--center_rewards_coefficient", type=float, default=0,
+                       help="Coefficient for the center rewards. 0 means no center rewards.")
     return parser.parse_args()
 
 def main():
@@ -36,6 +38,7 @@ def main():
     output_model_name = args.output_model_name
     reward_model_type = args.reward_model_type
     learning_rate = args.learning_rate
+    center_rewards_coefficient = args.center_rewards_coefficient
 
     if reward_model_type == "rm":
         trainer = RewardTrainer
@@ -77,6 +80,7 @@ def main():
         learning_rate=learning_rate,
         lr_scheduler_type="cosine",
         num_train_epochs=args.num_train_epochs,
+        center_rewards_coefficient=center_rewards_coefficient,
         # Evaluation
         report_to=["tensorboard","wandb"],
         # eval_strategy="epoch",
