@@ -87,12 +87,14 @@ class MRM(Qwen3PreTrainedModel):
         mu_chosen = self.mu_chosen.to(device)
         mu_rejected = self.mu_rejected.to(device)
         mu_d = self.mu_d.to(device)
-        sigma_chosen = self.sigma_chosen.to(device)
+        
         sigma_chosen_inv = self.sigma_chosen_inv.to(device)
-        sigma_rejected = self.sigma_rejected.to(device)
         sigma_rejected_inv = self.sigma_rejected_inv.to(device)
-        sigma_d = self.sigma_d.to(device)
         sigma_d_inv = self.sigma_d_inv.to(device)
+        
+        # sigma_chosen = self.sigma_chosen.to(device)
+        # sigma_rejected = self.sigma_rejected.to(device)
+        # sigma_d = self.sigma_d.to(device)
 
         # Odds reward: r = 2 * Σ_d^{-1} μ_d
         odds_reward = 2.0 * sigma_d_inv @ mu_d  # [hidden_size]
