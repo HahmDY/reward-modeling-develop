@@ -29,7 +29,7 @@ def load_representations(chosen_path, rejected_path):
     return chosen, rejected
 
 
-def prepare_data(chosen, rejected, sample_size=None, center_mode=None, weight_vector=None, prompt_repr=None, prompt_rank=None):
+def prepare_data(chosen, rejected, sample_size=None, center_mode=None, weight_vector=None, prompt_repr=None, prompt_rank=None, context_rank=None):
     """
     Combine chosen and rejected representations and create labels
     
@@ -37,10 +37,12 @@ def prepare_data(chosen, rejected, sample_size=None, center_mode=None, weight_ve
         chosen: numpy array of chosen representations
         rejected: numpy array of rejected representations
         sample_size: if specified, randomly sample this many examples from each class
-        center_mode: "pair", "w_projection", "residualize", "regression", "prompt_subtract", or None
+        center_mode: "pair", "w_projection", "residualize", "regression",
+                     "context_proj", "prompt_subtract", or None
         weight_vector: score.weight vector
         prompt_repr: prompt-only representations (for residualize/regression/prompt_subtract)
         prompt_rank: rank for prompt dim reduction in residualize/regression mode (default: 64)
+        context_rank: rank k of context subspace in context_proj mode (default: 64)
     
     Returns:
         X: combined representations (or 1D reward values if w_projection mode)
@@ -187,6 +189,75 @@ def prepare_data(chosen, rejected, sample_size=None, center_mode=None, weight_ve
         print(f"  Residual shape: {F_res.shape}")
         
         X = F_res
+        y = np.array([0] * len(chosen) + [1] * len(rejected))
+        
+    elif center_mode == "context_proj":
+        print("\nContext projection: pair-wise centering + context-orthogonal discriminant...")
+        
+        # === Step 1: Pair-wise centering (학습 시 - pair 있음) ===
+        pair_means = (chosen + rejected) / 2.0  # (N, D)
+        chosen_centered = chosen - pair_means    # (N, D)
+        rejected_centered = rejected - pair_means # (N, D)
+        
+        # === Step 2: Centered representation에서 GDA 파라미터 추정 ===
+        mu_plus = chosen_centered.mean(axis=0)    # (D,)
+        mu_minus = rejected_centered.mean(axis=0) # (D,)
+        
+        all_centered = np.vstack([chosen_centered, rejected_centered])  # (2N, D)
+        Sigma = np.cov(all_centered.T)  # (D, D)
+        Sigma += 1e-4 * np.eye(Sigma.shape[0])  # regularization
+        
+        Sigma_inv = np.linalg.inv(Sigma)
+        w = Sigma_inv @ (mu_plus - mu_minus)  # discriminant direction (D,)
+        
+        print(f"  ||mu_plus||: {np.linalg.norm(mu_plus):.4f}")
+        print(f"  ||mu_minus||: {np.linalg.norm(mu_minus):.4f}")
+        print(f"  ||mu_plus - mu_minus||: {np.linalg.norm(mu_plus - mu_minus):.4f}")
+        print(f"  ||w|| (raw discriminant): {np.linalg.norm(w):.4f}")
+        
+        # === Step 3: Context subspace 식별 (inference 시 pair 없이 적용 위함) ===
+        M_mean = pair_means.mean(axis=0, keepdims=True)
+        M_centered = pair_means - M_mean
+        
+        _, S, Vt = np.linalg.svd(M_centered, full_matrices=False)
+        
+        k = min(context_rank if context_rank is not None else 64, Vt.shape[0])
+        V_ctx = Vt[:k, :].T  # (D, k)
+        
+        total_var = (S ** 2).sum()
+        cum_var = (S[:k] ** 2).sum() / total_var
+        
+        print(f"  Context subspace rank k: {k}")
+        print(f"  Top singular values of pair-means: {S[:5]}")
+        print(f"  Cumulative explained variance of pair-means (k={k}): {cum_var:.4f}")
+        
+        # === Step 4: w에서 context 성분 제거 → w_proj ===
+        # w_proj = w - V_ctx @ V_ctx^T @ w
+        # inference 시 raw f_θ(x,y)에 w_proj 내적하면 context 자동 무시
+        w_ctx_component = V_ctx @ (V_ctx.T @ w)
+        w_proj = w - w_ctx_component
+        
+        ctx_ratio = np.linalg.norm(w_ctx_component) / np.linalg.norm(w)
+        print(f"  ||w_ctx_component|| / ||w||: {ctx_ratio:.4f}")
+        print(f"  ||w_proj|| (context-orthogonal): {np.linalg.norm(w_proj):.4f}")
+        
+        # === Step 5: 검증용 - 학습 데이터에서 분류 확인 ===
+        # pair-wise centering 기반 (학습 시 정확도)
+        scores_chosen_centered = chosen_centered @ w
+        scores_rejected_centered = rejected_centered @ w
+        acc_centered = (scores_chosen_centered > scores_rejected_centered).mean()
+        print(f"  Pair-wise centering accuracy (w): {acc_centered:.4f}")
+        
+        # context-projected w 기반 (inference 시뮬레이션 - raw representation 사용)
+        scores_chosen_proj = chosen @ w_proj
+        scores_rejected_proj = rejected @ w_proj
+        acc_proj = (scores_chosen_proj > scores_rejected_proj).mean()
+        print(f"  Context-projected accuracy (w_proj on raw): {acc_proj:.4f}")
+        
+        # === 최종 출력: inference용 데이터 구성 ===
+        # inference 시에는 R(x, y) = w_proj^T @ f_θ(x, y) + bias
+        F = np.vstack([chosen, rejected])  # (2N, D) - raw representation
+        X = F  # projection은 w_proj에 내재됨
         y = np.array([0] * len(chosen) + [1] * len(rejected))
         
     elif center_mode == "pair":
@@ -493,13 +564,13 @@ def main():
     parser.add_argument(
         '--chosen_path',
         type=str,
-        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-sft/chosen_representations.npy',
+        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-rm/chosen_representations.npy',
         help='Path to chosen representations .npy file'
     )
     parser.add_argument(
         '--rejected_path',
         type=str,
-        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-sft/rejected_representations.npy',
+        default=f'{RMOOD_HOME}/datasets/alpacafarm/rm/representations/Hahmdong--RMOOD-qwen3-4b-alpacafarm-rm/rejected_representations.npy',
         help='Path to rejected representations .npy file'
     )
     parser.add_argument(
@@ -548,9 +619,9 @@ def main():
     parser.add_argument(
         '--center_mode',
         type=str,
-        default='pair',
-        choices=['pair', 'prompt_subtract', 'w_projection', 'residualize', 'regression', 'none'],
-        help='Centering mode: "pair" for pair-wise mean, "prompt_subtract" for f(x,y)-f(x), "w_projection" for reward histogram, "residualize" for SVD subspace removal, "regression" for input-adaptive prompt regression, "none" for no centering'
+        default='context_proj',
+        choices=['pair', 'prompt_subtract', 'w_projection', 'residualize', 'regression', 'context_proj', 'none'],
+        help='Centering mode: "pair" pair-wise mean, "context_proj" pair-mean PCA subspace removal, "prompt_subtract" f(x,y)-f(x), "w_projection" reward histogram, "residualize" SVD subspace removal, "regression" input-adaptive prompt regression, "none" no centering'
     )
     parser.add_argument(
         '--prompt_path',
@@ -565,6 +636,12 @@ def main():
         help='Rank of prompt subspace to remove in residualize mode (default: 64)'
     )
     parser.add_argument(
+        '--context_rank',
+        type=int,
+        default=512,
+        help='Rank k of context subspace (pair-mean PCA) to remove in context_proj mode (default: 64)'
+    )
+    parser.add_argument(
         '--show_pairs',
         action='store_true',
         default=True,
@@ -573,7 +650,7 @@ def main():
     parser.add_argument(
         '--weight_path',
         type=str,
-        default=f'{RMOOD_HOME}/datasets/alpacafarm/distribution/Hahmdong_RMOOD-qwen3-4b-alpacafarm-rm-center/weight.npy',
+        default=f'{RMOOD_HOME}/datasets/alpacafarm/distribution/Hahmdong_RMOOD-qwen3-4b-alpacafarm-rm/weight.npy',
         help='Path to score.weight .npy file'
     )
     parser.add_argument(
@@ -604,7 +681,7 @@ def main():
     
     # Load weight vector if needed
     weight_vector = None
-    if args.center_mode in ("w_projection", "regression") or args.show_weight_direction:
+    if args.center_mode in ("w_projection", "regression", "context_proj") or args.show_weight_direction:
         weight_vector = load_score_weight(args.weight_path)
         if weight_vector is None:
             print("Error: Failed to load weight vector")
@@ -615,6 +692,7 @@ def main():
     # Load prompt representations if needed
     prompt_repr = None
     if args.center_mode in ("residualize", "regression", "prompt_subtract"):
+        # context_proj does NOT need external prompt repr — uses pair means
         print(f"\nLoading prompt representations from: {args.prompt_path}")
         prompt_repr = np.load(args.prompt_path)
         print(f"  Shape: {prompt_repr.shape}")
@@ -626,7 +704,8 @@ def main():
         center_mode=args.center_mode if args.center_mode != "none" else None,
         weight_vector=weight_vector,
         prompt_repr=prompt_repr,
-        prompt_rank=args.prompt_rank
+        prompt_rank=args.prompt_rank,
+        context_rank=args.context_rank
     )
     
     # Validate weight vector dimension
@@ -642,6 +721,14 @@ def main():
     # Visualize
     print("\nCreating visualization...")
     
+    # Helper: derive a save path variant by inserting a suffix before the extension
+    def _save_path_variant(base_path, suffix):
+        if base_path is None:
+            return None
+        import os
+        root, ext = os.path.splitext(base_path)
+        return f"{root}{suffix}{ext}"
+
     if args.center_mode == "w_projection":
         # W projection mode: show histogram of projections
         title = "W Projection: Chosen vs Rejected"
@@ -675,11 +762,20 @@ def main():
             title += " (Regression, w-preserving)"
         elif args.center_mode == "prompt_subtract":
             title += " (f(x,y) - f(x))"
+        elif args.center_mode == "context_proj":
+            title += f" (Context Projection, k={args.context_rank})"
+        
+        # For context_proj, save PCA plot with _pca suffix so the w-proj plot can use the base name
+        pca_save_path = (
+            _save_path_variant(args.output, "_pca")
+            if args.center_mode == "context_proj" and weight_vector is not None
+            else args.output
+        )
         
         visualize_pca(
             X_pca, 
             y, 
-            save_path=args.output,
+            save_path=pca_save_path,
             title=title,
             figsize=tuple(args.figsize),
             alpha=args.alpha,
@@ -689,6 +785,31 @@ def main():
             explained_variance=pca.explained_variance_ratio_ if pca.explained_variance_ratio_ is not None else None,
             show_pairs=args.show_pairs
         )
+        
+        # context_proj bonus: also show w-projection histogram on the projected representations
+        if args.center_mode == "context_proj" and weight_vector is not None:
+            print("\nAlso computing w-projection histogram on context-projected representations...")
+            w_normalized = weight_vector / (np.linalg.norm(weight_vector) + 1e-10)
+            w_proj_values = X @ w_normalized  # (2N,)
+            n = len(X) // 2
+            w_proj_chosen   = w_proj_values[:n]
+            w_proj_rejected = w_proj_values[n:]
+            print(f"  Chosen   mean: {w_proj_chosen.mean():.4f}  std: {w_proj_chosen.std():.4f}")
+            print(f"  Rejected mean: {w_proj_rejected.mean():.4f}  std: {w_proj_rejected.std():.4f}")
+            print(f"  Difference (chosen - rejected): {w_proj_chosen.mean() - w_proj_rejected.mean():.4f}")
+            
+            X_w = np.concatenate([w_proj_chosen, w_proj_rejected])[:, np.newaxis]
+            y_w = np.array([0] * n + [1] * n)
+            w_proj_save_path = _save_path_variant(args.output, "_w_proj")
+            visualize_w_projection(
+                X_w,
+                y_w,
+                save_path=w_proj_save_path,
+                title=f"W Projection after Context Projection (k={args.context_rank})",
+                figsize=tuple(args.figsize),
+                alpha=args.alpha,
+                bins=50
+            )
     
     print("\n" + "=" * 60)
     print("Visualization completed!")
