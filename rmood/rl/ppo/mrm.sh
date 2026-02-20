@@ -46,7 +46,7 @@ python3 -m verl.trainer.main_ppo --config-path=./config --config-name='ppo_megat
     reward_model.micro_batch_size_per_gpu=1 \
     reward_model.megatron.tensor_model_parallel_size=4 \
     algorithm.use_kl_in_reward=True \
-    algorithm.kl_ctrl.kl_coef=0.01 \
+    algorithm.kl_ctrl.kl_coef=0.001 \
     trainer.val_before_train=False \
     trainer.logger='["console","wandb"]' \
     trainer.project_name='RMOOD_PPO' \
