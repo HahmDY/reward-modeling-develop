@@ -3,11 +3,11 @@ cd $RMOOD_HOME
 export CUDA_VISIBLE_DEVICES=0
 export RM=rm
 
-# SFT
+hf download Hahmdong/RMOOD-qwen3-4b-alpacafarm-sft
 
 python ${RMOOD_HOME}/rmood/rl/ppo/test/sampling.py \
-	--model_name Hahmdong/RMOOD-qwen3-4b-alpacafarm-sft \
-	--source_path ${TAMPERING_HOME}/datasets/hhrlhf/rl/hhrlhf_RL_500_test.json \
-	--target_path ${TAMPERING_HOME}/datasets/hhrlhf/rl/responses/hhrlhf_RL_500_test_sft_ver17.json \
-	--gpus 0 \
-	--save_every 1
+--model_name Hahmdong/RMOOD-qwen3-4b-alpacafarm-sft \
+--source_path ${RMOOD_HOME}/datasets/alpacafarm/test/test_prompts.json \
+--target_path ${RMOOD_HOME}/datasets/alpacafarm/rl/ppo/RMOOD-qwen3-4b-alpacafarm-sft.json \
+--gpus 0 \
+--save_every 1

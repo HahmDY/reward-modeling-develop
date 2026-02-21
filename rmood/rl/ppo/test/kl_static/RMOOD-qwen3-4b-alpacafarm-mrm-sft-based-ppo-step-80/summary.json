@@ -1,0 +1,17 @@
+{
+  "actor_model_name": "Hahmdong/RMOOD-qwen3-4b-alpacafarm-mrm-sft-based-ppo-step-80",
+  "ref_model_name": "Hahmdong/RMOOD-qwen3-4b-alpacafarm-sft",
+  "kl_loss": 0.117068359375,
+  "metrics": {
+    "actor/kl_loss": 0.117068359375,
+    "num_prompts": 1000,
+    "num_examples": 1000,
+    "num_zero_resp": 0,
+    "mean_resp_len": 470.613,
+    "batches": 125,
+    "batch_size": 8,
+    "agg_mode": "sequence-mean",
+    "scope": "static_responses",
+    "num_sequences": 1000
+  }
+}
