@@ -1,6 +1,6 @@
 cd $RMOOD_HOME
 
-export CUDA_VISIBLE_DEVICES=1,2,3,4
+export CUDA_VISIBLE_DEVICES=0
 
 policy_models=(
 	"Hahmdong/RMOOD-qwen3-4b-alpacafarm-mrm-sft-based-ppo-step-10"
@@ -28,8 +28,9 @@ for policy_model in ${policy_models[@]}; do
 		python rmood/rm/dataset/labeling_reward.py \
 			--prompts_path $RMOOD_HOME/datasets/alpacafarm/test/test_prompts.json \
 			--responses_path $RMOOD_HOME/datasets/alpacafarm/rl/ppo/$policy_base_name.json \
-			--target_path $RMOOD_HOME/rmood/rl/ppo/test/rewards/${reward_base_name}/${policy_base_name}.json \
+			--target_path $RMOOD_HOME/rmood/rl/ppo/test/rewards/${policy_base_name}/${reward_base_name}.json \
 			--model_name $reward_model \
-			--num_responses 1
+			--num_responses 1 \
+			--batch_size 1
 	done
 done

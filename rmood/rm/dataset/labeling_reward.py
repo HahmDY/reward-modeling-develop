@@ -119,6 +119,7 @@ def main():
     
     # Save results
     print(f"Saving rewards to {target_path}...")
+    os.makedirs(os.path.dirname(target_path), exist_ok=True)
     with open(target_path, "w") as f:
         json.dump(all_rewards, f, indent=4)
     

@@ -619,7 +619,7 @@ def main():
     parser.add_argument(
         '--center_mode',
         type=str,
-        default='context_proj',
+        default='pair',
         choices=['pair', 'prompt_subtract', 'w_projection', 'residualize', 'regression', 'context_proj', 'none'],
         help='Centering mode: "pair" pair-wise mean, "context_proj" pair-mean PCA subspace removal, "prompt_subtract" f(x,y)-f(x), "w_projection" reward histogram, "residualize" SVD subspace removal, "regression" input-adaptive prompt regression, "none" no centering'
     )

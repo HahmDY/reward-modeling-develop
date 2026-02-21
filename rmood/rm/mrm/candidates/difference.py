@@ -39,17 +39,20 @@ def compute_gda_reward(f, mu_d, sigma_d_inv, mu_chosen, sigma_chosen_inv, mu_rej
         rewards: (N,)
         w:       (D,) reward weight vector
     """
-    odds_const = 0.0
-    mahalanobis_const = 1.0
+    odds_const = 1.0
+    mahalanobis_const = 0.0
     
     w = 2.0 * sigma_d_inv @ mu_d  # (D,)
     odds_rewards = f @ w              # (N,)
     
     diff_chosen = f - mu_chosen  # (N, D)
     diff_rejected = f - mu_rejected  # (N, D)
+    
+    mahalanobis_chosen_single = - 0.5 * np.sum(f @ sigma_d_inv * f, axis=1)  # (N,)
     mahalanobis_chosen = -0.5 * np.sum(diff_chosen @ sigma_chosen_inv * diff_chosen, axis=1)  # (N,)
     mahalanobis_rejected = -0.5 * np.sum(diff_rejected @ sigma_rejected_inv * diff_rejected, axis=1)  # (N,)
-    mahalanobis_rewards = mahalanobis_chosen - mahalanobis_rejected
+    
+    mahalanobis_rewards = mahalanobis_chosen_single
     rewards = odds_const * odds_rewards + mahalanobis_const * mahalanobis_rewards
     
     return rewards, w
