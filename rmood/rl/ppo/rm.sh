@@ -12,7 +12,7 @@ python3python3 -m verl.trainer.main_ppo --config-path=./config --config-name='pp
     algorithm.adv_estimator=gae \
     data.train_files="$train_files" \
     data.val_files="$test_files" \
-    data.train_batch_size=64 \
+    data.train_batch_size=128 \
     data.max_prompt_length=1536 \
     data.max_response_length=768 \
     data.filter_overlong_prompts=True \
@@ -55,6 +55,6 @@ python3python3 -m verl.trainer.main_ppo --config-path=./config --config-name='pp
     trainer.experiment_name=$experiment_name \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
-    trainer.save_freq=20 \
-    trainer.test_freq=20 \
+    trainer.save_freq=10 \
+    trainer.test_freq=10 \
     trainer.total_epochs=1 $@
