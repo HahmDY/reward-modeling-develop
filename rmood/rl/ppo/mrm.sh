@@ -8,7 +8,7 @@ reward_model_path=Hahmdong/RMOOD-qwen3-4b-alpacafarm-mrm-sft-based
 
 experiment_name=RMOOD-qwen3-4b-alpacafarm-mrm-sft-based-ppo
 
-python3 -m verl.trainer.main_ppo --config-path=./config --config-name='ppo_megatron_trainer'\
+python3python3 -m verl.trainer.main_ppo --config-path=./config --config-name='ppo_megatron_trainer'\
     algorithm.adv_estimator=gae \
     data.train_files="$train_files" \
     data.val_files="$test_files" \
@@ -19,8 +19,10 @@ python3 -m verl.trainer.main_ppo --config-path=./config --config-name='ppo_megat
     data.truncation='error' \
     actor_rollout_ref.model.path=$policy_model_path \
     actor_rollout_ref.model.use_fused_kernels=True \
-    actor_rollout_ref.actor.optim.lr=1e-6 \
-    actor_rollout_ref.actor.ppo_mini_batch_size=8 \
+    actor_rollout_ref.actor.optim.lr=5e-7 \
+    actor_rollout_ref.actor.optim.lr_warmup_steps_ratio=0.05 \
+    actor_rollout_ref.actor.optim.lr_scheduler_type="cosine" \
+    actor_rollout_ref.actor.ppo_mini_batch_size=64 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.actor.megatron.param_offload=True \
@@ -34,7 +36,7 @@ python3 -m verl.trainer.main_ppo --config-path=./config --config-name='ppo_megat
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.ref.megatron.tensor_model_parallel_size=4 \
     actor_rollout_ref.ref.megatron.param_offload=True \
-    critic.optim.lr=2e-6 \
+    critic.optim.lr=1e-6 \
     critic.model.path=$policy_model_path \
     critic.ppo_micro_batch_size_per_gpu=1 \
     critic.megatron.tensor_model_parallel_size=4 \
