@@ -8,7 +8,7 @@ reward_model_path=Hahmdong/RMOOD-qwen3-4b-alpacafarm-mrm-sft-based
 
 experiment_name=RMOOD-qwen3-4b-alpacafarm-mrm-sft-based-ppo
 
-python3python3 -m verl.trainer.main_ppo --config-path=./config --config-name='ppo_megatron_trainer'\
+python3 -m verl.trainer.main_ppo --config-path=./config --config-name='ppo_megatron_trainer'\
     algorithm.adv_estimator=gae \
     data.train_files="$train_files" \
     data.val_files="$test_files" \
@@ -21,7 +21,6 @@ python3python3 -m verl.trainer.main_ppo --config-path=./config --config-name='pp
     actor_rollout_ref.model.use_fused_kernels=True \
     actor_rollout_ref.actor.optim.lr=5e-7 \
     actor_rollout_ref.actor.optim.lr_warmup_steps_ratio=0.05 \
-    actor_rollout_ref.actor.optim.lr_scheduler_type="cosine" \
     actor_rollout_ref.actor.ppo_mini_batch_size=64 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.actor.use_kl_loss=False \
